@@ -1,0 +1,81 @@
+"""全局配置模块。
+
+基于 pydantic-settings 从项目根目录的 .env 文件加载配置项，
+覆盖数据库连接、JWT 认证以及三家大模型服务商（DeepSeek、豆包 VLM、智谱）参数，
+供全工程统一引用 `settings` 单例。
+"""
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 工程根目录（backend-agent/），保证任意工作目录启动均可正确定位 .env
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+class Settings(BaseSettings):
+    """全局配置类。
+
+    Attributes:
+        db_host: MySQL 主机地址。
+        db_port: MySQL 端口。
+        db_user: MySQL 用户名。
+        db_password: MySQL 密码。
+        db_name: 业务库名（utf8mb4 字符集）。
+        jwt_secret_key: JWT 签名密钥。
+        jwt_algorithm: JWT 签名算法。
+        jwt_expire_days: JWT 有效期（天）。
+        deepseek_base_url: DeepSeek OpenAI 兼容接口地址。
+        deepseek_api_key: DeepSeek API Key。
+        deepseek_model: DeepSeek 推理/决策模型名。
+        doubao_vlm_base_url: 豆包 VLM 接口地址。
+        doubao_vlm_api_key: 豆包 VLM API Key。
+        doubao_vlm_model: 豆包图像识别模型名。
+        zhipu_base_url: 智谱开放平台接口地址。
+        zhipu_api_key: 智谱 API Key。
+        zhipu_model: 智谱向量化模型名（RAG 用）。
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=str(BASE_DIR / ".env"),
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # ---------- MySQL 数据库 ----------
+    db_host: str = "localhost"
+    db_port: int = 3306
+    db_user: str = "root"
+    db_password: str = "123456"
+    db_name: str = "Ai_Farm_Manage"
+
+    # ---------- JWT 认证 ----------
+    jwt_secret_key: str = "farm-care-agent-secret-key"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_days: int = 7
+
+    # ---------- DeepSeek ----------
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-flash"
+
+    # ---------- 豆包 VLM ----------
+    doubao_vlm_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    doubao_vlm_api_key: str = ""
+    doubao_vlm_model: str = "doubao-seed-2-0-mini-260428"
+
+    # ---------- 智谱 ----------
+    zhipu_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    zhipu_api_key: str = ""
+    zhipu_model: str = "Embedding-3"
+
+    # ---------- 和风天气（QWeather） ----------
+    weather_api_host: str = "https://devapi.qweather.com"
+    weather_geo_host: str = "https://geoapi.qweather.com"
+    weather_api_key: str = ""
+    # 全局默认位置（"经度,纬度" 或 城市名）：棚室等无坐标地块的气象回退
+    weather_default_location: str = ""
+
+
+# 全局配置单例
+settings = Settings()

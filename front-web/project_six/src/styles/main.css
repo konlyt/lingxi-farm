@@ -1,0 +1,71 @@
+/*
+ * 文件说明：全局基础样式。
+ * 统一页面容器、卡片、三态辅助类与移动端适配基础规则。
+ */
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background-color: #f5f7fa;
+  color: #303133;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 页面主容器 */
+.page {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* 通用内容卡片 */
+.page-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.page-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: #303133;
+}
+
+/* 异常三态布局 */
+.state-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+/* 次要说明文字 */
+.text-muted {
+  color: #909399;
+  font-size: 12px;
+}
+
+/* 环境指标越限红色高亮 */
+.metric-exceeded {
+  color: #f56c6c;
+  font-weight: 600;
+}
+
+/* 移动端适配：底部 Tab 预留空间 */
+@media (max-width: 991px) {
+  .page-card {
+    padding: 12px;
+  }
+}

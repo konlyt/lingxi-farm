@@ -1,0 +1,25 @@
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# 环境配置（含密钥，不上传）
+.env
+.env.*
+
+# 运行时数据
+uploads/
+exports/
+logs/
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
