@@ -232,6 +232,28 @@ def _weather_warning_job() -> None:
         session.close()
 
 
+def _digest_email_job() -> None:
+    """每小时任务：将当日 pending 每日汇总记录按用户聚合为单封邮件发送。
+
+    Returns:
+        None。
+
+    Raises:
+        Exception: 不向外抛出。
+    """
+    from app.services.alert_service import send_pending_digest_emails
+
+    session: DBSession = SessionLocal()
+    try:
+        sent = send_pending_digest_emails(session)
+        if sent:
+            logger.info("每日汇总邮件已聚合发送: %s 封", sent)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("每日汇总邮件发送失败: %s", exc)
+    finally:
+        session.close()
+
+
 def start_scheduler() -> None:
     """注册全部定时任务并启动调度器（随 FastAPI lifespan 启动）。
 
@@ -261,8 +283,10 @@ def start_scheduler() -> None:
         _weather_warning_job, "interval", hours=1, id="weather_warning",
         next_run_time=datetime.now(),
     )
+    # 每小时聚合发送每日汇总邮件（pending 记录合并为每用户单封）
+    scheduler.add_job(_digest_email_job, "interval", hours=1, id="digest_email")
     scheduler.start()
-    logger.info("定时任务调度器已启动（8 项任务注册）")
+    logger.info("定时任务调度器已启动（9 项任务注册）")
 
 
 def stop_scheduler() -> None:

@@ -2,7 +2,7 @@
 /**
  * 文件说明：系统设置页（19）。
  * 置信度阈值分病种配置（owner 可编辑，0–1 两位小数）、家庭成员管理（邀请/停用）、
- * 服务号绑定状态展示、修改密码表单。
+ * 消息推送（邮箱绑定 + 微信服务号状态「暂缓接入」标注）、修改密码表单。
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -11,9 +11,11 @@ import { useRouter } from 'vue-router'
 import {
   createMember,
   getConfidenceThresholds,
+  getEmailBind,
   getMembers,
   getWxBind,
   updateConfidenceThresholds,
+  updateEmailBind,
   updateMemberStatus,
 } from '@/api/settings'
 import { changePassword } from '@/api/auth'
@@ -124,7 +126,56 @@ async function toggleMember(member: Member): Promise<void> {
   await memberState.load()
 }
 
-// ---------- 服务号绑定 ----------
+// ---------- 消息推送：邮箱绑定 ----------
+const emailState = useAsyncData(getEmailBind)
+/** 邮箱输入值 */
+const emailInput = ref('')
+/** 邮箱保存中 */
+const emailSaving = ref(false)
+/** 当前用户邮箱绑定信息（null 表示尚未加载完成） */
+const emailInfo = computed(() => emailState.data.value ?? null)
+
+// 异步数据到达后回填输入框（仅输入框未被用户编辑时）
+watch(
+  () => emailState.data.value,
+  (val) => {
+    if (val?.email && !emailInput.value) emailInput.value = val.email
+  },
+  { immediate: true },
+)
+
+/**
+ * 简易邮箱格式前端预校验（与后端正则一致）。
+ * @param value 输入邮箱
+ * @returns 是否为合法格式
+ */
+function isValidEmail(value: string): boolean {
+  return /^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(value)
+}
+
+/**
+ * 保存邮箱绑定（保存即生效；格式非法前端直接拦截，唯一性冲突由后端 400 提示）。
+ * @throws 后端报错时由 axios 拦截器统一提示
+ */
+async function saveEmail(): Promise<void> {
+  const value = emailInput.value.trim()
+  if (!isValidEmail(value)) {
+    ElMessage.warning('请输入合法的邮箱地址')
+    return
+  }
+  emailSaving.value = true
+  try {
+    const result = await updateEmailBind(value)
+    ElMessage.success(
+      result.bind_mail_sent ? '邮箱已绑定，绑定通知邮件已发送' : '邮箱已绑定（邮件通道未配置，通知邮件未发送）',
+    )
+    await emailState.load()
+  } finally {
+    emailSaving.value = false
+  }
+}
+
+// ---------- 消息推送：服务号绑定（暂缓接入） ----------
 const wxState = useAsyncData(getWxBind)
 
 /** 绑定列表 */
@@ -253,16 +304,42 @@ async function submitPassword(): Promise<void> {
           </StateWrap>
         </el-tab-pane>
 
-        <!-- 服务号绑定 -->
-        <el-tab-pane label="服务号绑定" name="wx">
+        <!-- 消息推送：邮箱绑定 + 服务号（暂缓接入） -->
+        <el-tab-pane label="消息推送" name="push">
+          <!-- 邮箱绑定 -->
+          <el-alert
+            title="绑定邮箱后，农情预警、病情升级、每日汇总与每日农情简报将发送到您的邮箱"
+            type="info"
+            show-icon
+            :closable="false"
+            style="margin-bottom: 12px"
+          />
+          <StateWrap :loading="emailState.loading.value" :failed="emailState.failed.value" :rows="2" @retry="emailState.load()">
+            <div class="email-bind-row">
+              <el-input
+                v-model="emailInput"
+                placeholder="请输入邮箱地址，如 farm@qq.com"
+                maxlength="128"
+                style="width: 320px"
+                clearable
+              />
+              <el-button type="primary" :loading="emailSaving" @click="saveEmail">保存绑定</el-button>
+              <el-tag v-if="emailInfo?.email_bind_status === 1 && emailInfo.email" type="success" size="large">
+                已绑定：{{ emailInfo.email }}
+              </el-tag>
+              <el-tag v-else type="info" size="large">未绑定</el-tag>
+            </div>
+          </StateWrap>
+
+          <el-divider content-position="left">微信服务号</el-divider>
+          <el-alert
+            title="微信服务号模板消息推送暂缓接入，当前消息推送主通道为邮箱"
+            type="warning"
+            show-icon
+            :closable="false"
+            style="margin-bottom: 12px"
+          />
           <StateWrap :loading="wxState.loading.value" :failed="wxState.failed.value" :rows="3" @retry="wxState.load()">
-            <el-alert
-              title="绑定微信服务号后，预警/简报/建议将通过服务号模板消息推送（点击消息直达对应页面）"
-              type="info"
-              show-icon
-              :closable="false"
-              style="margin-bottom: 12px"
-            />
             <el-table :data="wxList" stripe>
               <el-table-column prop="nickname" label="成员" min-width="120" />
               <el-table-column label="角色" width="110">
@@ -275,6 +352,11 @@ async function submitPassword(): Promise<void> {
               <el-table-column label="绑定状态" width="120">
                 <template #default="{ row }">
                   <el-tag size="small" :type="wxBindTag(row.wx_bind_status).type">{{ wxBindTag(row.wx_bind_status).text }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="接入进度" width="120">
+                <template #default>
+                  <el-tag size="small" type="info">暂缓接入</el-tag>
                 </template>
               </el-table-column>
             </el-table>
@@ -329,6 +411,13 @@ async function submitPassword(): Promise<void> {
   justify-content: space-between;
   gap: 10px;
   margin-top: 10px;
+}
+
+.email-bind-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
 }
 
 .pwd-form {

@@ -24,6 +24,8 @@ class SysUser(Base):
         role: 角色 owner/member。
         wx_openid: 微信服务号 OpenID（推送定向，可空）。
         wx_bind_status: 服务号绑定状态 0未绑/1已绑。
+        email: 推送邮箱（唯一，可空，未绑定为 NULL）。
+        email_bind_status: 邮箱绑定状态 0未绑/1已绑。
         status: 1启用/0停用。
         created_at: 创建时间。
     """
@@ -31,6 +33,7 @@ class SysUser(Base):
     __table_args__ = (
         Index("uk_username", "username", unique=True),
         Index("uk_wx_openid", "wx_openid", unique=True),
+        Index("uk_email", "email", unique=True),
         {"comment": "用户表：农场主与家庭成员"},
     )
 
@@ -41,5 +44,7 @@ class SysUser(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, comment="角色 owner/member")
     wx_openid: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="微信服务号OpenID")
     wx_bind_status: Mapped[int] = mapped_column(TINYINT, nullable=False, default=0, comment="服务号绑定状态 0未绑/1已绑")
+    email: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="推送邮箱（唯一）")
+    email_bind_status: Mapped[int] = mapped_column(TINYINT, nullable=False, default=0, server_default="0", comment="邮箱绑定状态 0未绑/1已绑")
     status: Mapped[int] = mapped_column(TINYINT, nullable=False, default=1, comment="1启用/0停用")
     created_at: Mapped[datetime] = mapped_column(DT3, nullable=False, default=datetime.now, comment="创建时间")

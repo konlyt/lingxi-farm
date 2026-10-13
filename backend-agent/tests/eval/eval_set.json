@@ -1,0 +1,226 @@
+[
+  {
+    "id": "early_blight_001",
+    "image_path": "images/early_blight/early_blight_001.jpg",
+    "label_disease": "番茄早疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "early_blight_002",
+    "image_path": "images/early_blight/early_blight_002.jpg",
+    "label_disease": "番茄早疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "early_blight_003",
+    "image_path": "images/early_blight/early_blight_003.jpg",
+    "label_disease": "番茄早疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "early_blight_004",
+    "image_path": "images/early_blight/early_blight_004.jpg",
+    "label_disease": "番茄早疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "early_blight_005",
+    "image_path": "images/early_blight/early_blight_005.jpg",
+    "label_disease": "番茄早疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "early_blight_006",
+    "image_path": "images/early_blight/early_blight_006.jpg",
+    "label_disease": "番茄早疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "early_blight_007",
+    "image_path": "images/early_blight/early_blight_007.jpg",
+    "label_disease": "番茄早疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "early_blight_008",
+    "image_path": "images/early_blight/early_blight_008.jpg",
+    "label_disease": "番茄早疫病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "late_blight_001",
+    "image_path": "images/late_blight/late_blight_001.jpg",
+    "label_disease": "番茄晚疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "late_blight_002",
+    "image_path": "images/late_blight/late_blight_002.jpg",
+    "label_disease": "番茄晚疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "late_blight_003",
+    "image_path": "images/late_blight/late_blight_003.jpg",
+    "label_disease": "番茄晚疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "late_blight_004",
+    "image_path": "images/late_blight/late_blight_004.jpg",
+    "label_disease": "番茄晚疫病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "late_blight_005",
+    "image_path": "images/late_blight/late_blight_005.jpg",
+    "label_disease": "番茄晚疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "late_blight_006",
+    "image_path": "images/late_blight/late_blight_006.jpg",
+    "label_disease": "番茄晚疫病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "late_blight_007",
+    "image_path": "images/late_blight/late_blight_007.jpg",
+    "label_disease": "番茄晚疫病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "late_blight_008",
+    "image_path": "images/late_blight/late_blight_008.jpg",
+    "label_disease": "番茄晚疫病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "powdery_mildew_001",
+    "image_path": "images/powdery_mildew/powdery_mildew_001.jpg",
+    "label_disease": "白粉病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "powdery_mildew_002",
+    "image_path": "images/powdery_mildew/powdery_mildew_002.jpg",
+    "label_disease": "白粉病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "powdery_mildew_003",
+    "image_path": "images/powdery_mildew/powdery_mildew_003.jpg",
+    "label_disease": "白粉病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "powdery_mildew_004",
+    "image_path": "images/powdery_mildew/powdery_mildew_004.jpg",
+    "label_disease": "白粉病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "powdery_mildew_005",
+    "image_path": "images/powdery_mildew/powdery_mildew_005.jpg",
+    "label_disease": "白粉病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "powdery_mildew_006",
+    "image_path": "images/powdery_mildew/powdery_mildew_006.jpg",
+    "label_disease": "白粉病",
+    "label_category": "common",
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "powdery_mildew_007",
+    "image_path": "images/powdery_mildew/powdery_mildew_007.jpg",
+    "label_disease": "白粉病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "powdery_mildew_008",
+    "image_path": "images/powdery_mildew/powdery_mildew_008.jpg",
+    "label_disease": "白粉病",
+    "label_category": "common",
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "healthy_001",
+    "image_path": "images/healthy/healthy_001.jpg",
+    "label_disease": "健康",
+    "label_category": null,
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "healthy_002",
+    "image_path": "images/healthy/healthy_002.jpg",
+    "label_disease": "健康",
+    "label_category": null,
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "healthy_003",
+    "image_path": "images/healthy/healthy_003.jpg",
+    "label_disease": "健康",
+    "label_category": null,
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "healthy_004",
+    "image_path": "images/healthy/healthy_004.jpg",
+    "label_disease": "健康",
+    "label_category": null,
+    "plot_type_hint": "open_field"
+  },
+  {
+    "id": "healthy_005",
+    "image_path": "images/healthy/healthy_005.jpg",
+    "label_disease": "健康",
+    "label_category": null,
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "healthy_006",
+    "image_path": "images/healthy/healthy_006.jpg",
+    "label_disease": "健康",
+    "label_category": null,
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "healthy_007",
+    "image_path": "images/healthy/healthy_007.jpg",
+    "label_disease": "健康",
+    "label_category": null,
+    "plot_type_hint": "greenhouse"
+  },
+  {
+    "id": "healthy_008",
+    "image_path": "images/healthy/healthy_008.jpg",
+    "label_disease": "健康",
+    "label_category": null,
+    "plot_type_hint": "greenhouse"
+  }
+]

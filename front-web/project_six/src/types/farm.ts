@@ -800,6 +800,20 @@ export interface WxBindItem {
   wx_openid?: string | null
 }
 
+/** 当前用户推送邮箱绑定信息 */
+export interface EmailBindInfo {
+  /** 绑定邮箱（未绑定为 null） */
+  email: string | null
+  /** 邮箱绑定状态：1 已绑定 / 0 未绑定 */
+  email_bind_status: number
+}
+
+/** 邮箱绑定保存响应（含绑定通知邮件发送结果） */
+export interface EmailBindUpdateResult extends EmailBindInfo {
+  /** 绑定通知邮件是否发送成功（邮箱通道未配置时为 false，绑定仍生效） */
+  bind_mail_sent: boolean
+}
+
 /** 会话信息 */
 export interface ChatSession {
   /** 会话 ID */

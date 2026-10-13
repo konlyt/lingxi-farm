@@ -1,24 +1,31 @@
 """系统设置接口路由。
 
 提供置信度阈值配置查询/编辑（owner）、家庭成员管理（owner）、
-以及微信服务号绑定状态列表查询。
+微信服务号绑定状态列表查询，以及推送邮箱绑定（owner/member 均可绑定自己的邮箱）。
 """
+import logging
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import BusinessException, ok
-from app.core.security import hash_password, require_owner
+from app.core.security import get_current_user, hash_password, require_owner
 from app.models.advice import ConfidenceThresholdConfig
 from app.models.user import SysUser
 from app.schemas.settings import (
     ConfidenceThresholdUpdateRequest,
+    EmailBindUpdateRequest,
     MemberCreateRequest,
     MemberStatusPatchRequest,
 )
+from app.services import notifier
 from app.utils.time_utils import now
 
 router = APIRouter(prefix="/api/settings", tags=["系统设置"], dependencies=[Depends(require_owner)])
+
+# 邮箱绑定路由（owner/member 均可操作自己的邮箱，故不走 require_owner，仅要求登录）
+email_router = APIRouter(prefix="/api/settings/email", tags=["系统设置"])
 
 
 @router.get("/confidence-thresholds", summary="置信度阈值配置列表")
@@ -186,3 +193,60 @@ def list_wx_bind(db: Session = Depends(get_db)) -> dict:
             for row in rows
         ]
     )
+
+
+@email_router.get("", summary="查询当前用户绑定邮箱")
+def get_email(user: SysUser = Depends(get_current_user)) -> dict:
+    """查询当前登录用户的推送邮箱与绑定状态。
+
+    Args:
+        user: 经认证的当前登录用户（owner/member 均可）。
+
+    Returns:
+        dict: 统一响应，data 为 {email, email_bind_status}（未绑定时 email 为 null）。
+    """
+    return ok({"email": user.email, "email_bind_status": user.email_bind_status})
+
+
+@email_router.put("", summary="绑定/修改当前用户推送邮箱")
+def update_email(body: EmailBindUpdateRequest, db: Session = Depends(get_db),
+                 user: SysUser = Depends(get_current_user)) -> dict:
+    """绑定或修改当前登录用户的推送邮箱（owner/member 均可改自己的）。
+
+    校验：邮箱格式经 Pydantic 简易正则校验（不合格 400/422）；
+    唯一性：该邮箱已被其他用户绑定时返回 400。
+    保存即生效（email_bind_status=1），并尝试发送绑定成功通知邮件；
+    邮箱通道未配置时仅保存不发送（静默降级）。
+
+    Args:
+        body: 邮箱绑定请求体 {email}。
+        db: 数据库会话。
+        user: 经认证的当前登录用户。
+
+    Returns:
+        dict: 统一响应，data 为 {email, email_bind_status, bind_mail_sent}。
+
+    Raises:
+        BusinessException: 400 该邮箱已被其他用户绑定。
+    """
+    normalized = body.email.strip()
+    conflict = (
+        db.query(SysUser)
+        .filter(SysUser.email == normalized, SysUser.id != user.id)
+        .first()
+    )
+    if conflict is not None:
+        raise BusinessException(400, "该邮箱已被其他用户绑定")
+    user.email = normalized
+    user.email_bind_status = 1
+    db.commit()
+    # 绑定成功通知邮件：邮箱通道未配置时 send_email 返回 (False, '邮箱未配置')，仅保存不发送
+    mail_sent, mail_error = notifier.send_email(
+        normalized, "【绑定成功】推送邮箱已生效", notifier.render_bind_email(normalized)
+    )
+    if not mail_sent:
+        # 未配置通道或发送失败均不影响绑定生效，仅记日志
+        logging.getLogger("farm_settings").info(
+            "绑定通知邮件未发送: user=%s email=%s err=%s", user.username, normalized, mail_error
+        )
+    return ok({"email": user.email, "email_bind_status": user.email_bind_status, "bind_mail_sent": mail_sent})

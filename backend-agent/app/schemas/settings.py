@@ -1,8 +1,14 @@
 """系统设置相关请求模型。
 
-包含置信度阈值编辑、家庭成员创建/状态切换。
+包含置信度阈值编辑、家庭成员创建/状态切换、推送邮箱绑定。
 """
+import re
+
 from pydantic import BaseModel, Field, field_validator
+
+
+# 邮箱格式简易校验正则（RFC 简化版：本地段@域名段.顶级段）
+_EMAIL_PATTERN = re.compile(r"^[\w.+-]+@[\w-]+\.[\w.-]+$")
 
 
 class ConfidenceThresholdItem(BaseModel):
@@ -67,3 +73,32 @@ class MemberStatusPatchRequest(BaseModel):
     """
 
     status: int = Field(..., ge=0, le=1, description="1启用/0停用")
+
+
+class EmailBindUpdateRequest(BaseModel):
+    """推送邮箱绑定请求体（owner/member 均可绑定自己的邮箱）。
+
+    Attributes:
+        email: 待绑定的邮箱地址（格式经简易正则校验）。
+    """
+
+    email: str = Field(..., min_length=5, max_length=128, description="绑定邮箱地址")
+
+    @field_validator("email")
+    @classmethod
+    def check_email_format(cls, value: str) -> str:
+        """校验邮箱格式（去除首尾空白后按简易正则匹配）。
+
+        Args:
+            value: 输入邮箱字符串。
+
+        Returns:
+            str: 去除首尾空白后的合法邮箱。
+
+        Raises:
+            ValueError: 邮箱格式不符合简易正则时抛出。
+        """
+        normalized = value.strip()
+        if not _EMAIL_PATTERN.match(normalized):
+            raise ValueError("邮箱格式不正确，请输入合法邮箱地址")
+        return normalized

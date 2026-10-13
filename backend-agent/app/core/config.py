@@ -33,6 +33,12 @@ class Settings(BaseSettings):
         zhipu_base_url: 智谱开放平台接口地址。
         zhipu_api_key: 智谱 API Key。
         zhipu_model: 智谱向量化模型名（RAG 用）。
+        email_host: SMTP 邮件服务器主机（如 smtp.qq.com）。
+        email_port: SMTP SSL 端口（默认 465）。
+        email_user: SMTP 登录邮箱账号（留空表示邮件通道未配置）。
+        email_password: SMTP 授权码（QQ 邮箱为授权码而非登录密码，留空未配置）。
+        email_sender: 发件人展示地址（留空时默认取 email_user）。
+        vlm_enhance_enabled: VLM 置信度增强开关（三次采样投票+候选约束+few-shot）。
     """
 
     model_config = SettingsConfigDict(
@@ -75,6 +81,16 @@ class Settings(BaseSettings):
     weather_api_key: str = ""
     # 全局默认位置（"经度,纬度" 或 城市名）：棚室等无坐标地块的气象回退
     weather_default_location: str = ""
+
+    # ---------- 邮件推送（SMTP SSL，QQ 邮箱授权码由用户填入） ----------
+    email_host: str = "smtp.qq.com"
+    email_port: int = 465
+    email_user: str = ""
+    email_password: str = ""
+    email_sender: str = ""
+
+    # ---------- 诊断增强 ----------
+    vlm_enhance_enabled: bool = True
 
 
 # 全局配置单例

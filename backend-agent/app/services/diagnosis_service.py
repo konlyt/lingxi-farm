@@ -18,6 +18,7 @@ from app.models.diagnosis import DiagnosisResult, DiagnosisTask, DiagnosisTaskIm
 from app.models.image import CollectedImage
 from app.models.knowledge import HarvestRestriction
 from app.models.plot import Plot
+from app.services.notifier import notify_owner_task_failure
 from app.utils.time_utils import fmt_datetime, now
 
 logger = logging.getLogger("farm_diagnosis")
@@ -119,6 +120,8 @@ def run_task(task_id: int) -> None:
             task.status = "failed"
             task.failure_reason = str(final_state["error"])[:255]
             session.commit()
+            # 失败告警邮件（发给 owner，1 小时节流，未绑定邮箱跳过）
+            notify_owner_task_failure(session, task.id, task.failure_reason)
             return
 
         diagnosis = final_state.get("diagnosis", {})
@@ -138,6 +141,8 @@ def run_task(task_id: int) -> None:
                 task.failure_reason = str(exc)[:255]
                 task.finished_at = now()
                 session.commit()
+                # 失败告警邮件（发给 owner，1 小时节流，未绑定邮箱跳过）
+                notify_owner_task_failure(session, task_id, task.failure_reason)
         except Exception:  # noqa: BLE001
             logger.exception("诊断任务失败状态落库失败: id=%s", task_id)
     finally:

@@ -1,0 +1,495 @@
+{
+  "run_at": "2026-10-12T19:34:56",
+  "mode": "real",
+  "total": 32,
+  "top1_accuracy": 0.5,
+  "per_class": {
+    "early_blight": {
+      "label": "番茄早疫病",
+      "total": 8,
+      "correct": 8,
+      "accuracy": 1.0
+    },
+    "late_blight": {
+      "label": "番茄晚疫病",
+      "total": 8,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    "powdery_mildew": {
+      "label": "白粉病",
+      "total": 8,
+      "correct": 1,
+      "accuracy": 0.125
+    },
+    "healthy": {
+      "label": "健康",
+      "total": 8,
+      "correct": 7,
+      "accuracy": 0.875
+    }
+  },
+  "low_conf_recall": 0.3125,
+  "avg_latency_ms": 24733.9,
+  "rag": {
+    "hit_rate": 1.0,
+    "hit": 6,
+    "total": 6,
+    "details": [
+      {
+        "target": "番茄早疫病",
+        "question": "番茄早疫病用什么药防治？",
+        "hit": true,
+        "top_titles": [
+          "番茄早疫病识别与防治",
+          "番茄晚疫病识别与防治",
+          "番茄病毒病（黄化曲叶与花叶）识别与防治"
+        ],
+        "top_similarity": 0.6464
+      },
+      {
+        "target": "番茄早疫病",
+        "question": "番茄叶片出现褐色同心轮纹病斑是什么病？",
+        "hit": true,
+        "top_titles": [
+          "番茄早疫病识别与防治",
+          "番茄细菌性斑点病与靶斑病识别与防治",
+          "番茄叶霉病与斑枯病识别与防治"
+        ],
+        "top_similarity": 0.6376
+      },
+      {
+        "target": "番茄晚疫病",
+        "question": "番茄晚疫病如何识别与防治？",
+        "hit": true,
+        "top_titles": [
+          "番茄晚疫病识别与防治",
+          "番茄早疫病识别与防治",
+          "番茄细菌性斑点病与靶斑病识别与防治"
+        ],
+        "top_similarity": 0.7563
+      },
+      {
+        "target": "番茄晚疫病",
+        "question": "番茄叶背出现白色霉层和水渍状大斑怎么办？",
+        "hit": true,
+        "top_titles": [
+          "番茄白粉病识别与防治",
+          "番茄晚疫病识别与防治",
+          "番茄细菌性斑点病与靶斑病识别与防治"
+        ],
+        "top_similarity": 0.5854
+      },
+      {
+        "target": "番茄白粉病",
+        "question": "番茄白粉病用什么药？",
+        "hit": true,
+        "top_titles": [
+          "番茄白粉病识别与防治",
+          "番茄晚疫病识别与防治",
+          "番茄细菌性斑点病与靶斑病识别与防治"
+        ],
+        "top_similarity": 0.6444
+      },
+      {
+        "target": "番茄白粉病",
+        "question": "番茄叶面上有白色粉状霉层怎么治？",
+        "hit": true,
+        "top_titles": [
+          "番茄白粉病识别与防治",
+          "番茄晚疫病识别与防治",
+          "黄瓜白粉病与枯萎病识别与防治"
+        ],
+        "top_similarity": 0.6258
+      }
+    ]
+  },
+  "baseline": false,
+  "baseline_note": "与历史基线对比：关注 top1_accuracy/per_class/low_conf_recall 变化",
+  "details": [
+    {
+      "id": "early_blight_001",
+      "label": "番茄早疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.966,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 27105.3,
+      "error": null
+    },
+    {
+      "id": "early_blight_002",
+      "label": "番茄早疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.966,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 42760.4,
+      "error": null
+    },
+    {
+      "id": "early_blight_003",
+      "label": "番茄早疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.9625,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 36849.9,
+      "error": null
+    },
+    {
+      "id": "early_blight_004",
+      "label": "番茄早疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.99,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 39681.3,
+      "error": null
+    },
+    {
+      "id": "early_blight_005",
+      "label": "番茄早疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.945,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 43397.7,
+      "error": null
+    },
+    {
+      "id": "early_blight_006",
+      "label": "番茄早疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.966,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 32827.5,
+      "error": null
+    },
+    {
+      "id": "early_blight_007",
+      "label": "番茄早疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.945,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 33885.3,
+      "error": null
+    },
+    {
+      "id": "early_blight_008",
+      "label": "番茄早疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.945,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 41759.6,
+      "error": null
+    },
+    {
+      "id": "late_blight_001",
+      "label": "番茄晚疫病",
+      "predicted": "番茄炭疽病",
+      "confidence": 0.7875,
+      "result_level": "low",
+      "status": "done",
+      "correct": false,
+      "low_marked": true,
+      "latency_ms": 17699.2,
+      "error": null
+    },
+    {
+      "id": "late_blight_002",
+      "label": "番茄晚疫病",
+      "predicted": "番茄叶斑病",
+      "confidence": 0.861,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 40612.2,
+      "error": null
+    },
+    {
+      "id": "late_blight_003",
+      "label": "番茄晚疫病",
+      "predicted": "番茄叶斑病",
+      "confidence": 0.8925,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 37564.1,
+      "error": null
+    },
+    {
+      "id": "late_blight_004",
+      "label": "番茄晚疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.8925,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 37763.2,
+      "error": null
+    },
+    {
+      "id": "late_blight_005",
+      "label": "番茄晚疫病",
+      "predicted": "番茄叶斑病",
+      "confidence": 0.8925,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 41100.6,
+      "error": null
+    },
+    {
+      "id": "late_blight_006",
+      "label": "番茄晚疫病",
+      "predicted": "番茄叶斑病",
+      "confidence": 0.861,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 37438.7,
+      "error": null
+    },
+    {
+      "id": "late_blight_007",
+      "label": "番茄晚疫病",
+      "predicted": "番茄叶斑病",
+      "confidence": 0.7875,
+      "result_level": "low",
+      "status": "done",
+      "correct": false,
+      "low_marked": true,
+      "latency_ms": 18192.5,
+      "error": null
+    },
+    {
+      "id": "late_blight_008",
+      "label": "番茄晚疫病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.861,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 37581.1,
+      "error": null
+    },
+    {
+      "id": "powdery_mildew_001",
+      "label": "白粉病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.8925,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 14952.6,
+      "error": null
+    },
+    {
+      "id": "powdery_mildew_002",
+      "label": "白粉病",
+      "predicted": "健康",
+      "confidence": 1.0,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 6580.9,
+      "error": null
+    },
+    {
+      "id": "powdery_mildew_003",
+      "label": "白粉病",
+      "predicted": "番茄灰霉病",
+      "confidence": 0.861,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 18356.2,
+      "error": null
+    },
+    {
+      "id": "powdery_mildew_004",
+      "label": "白粉病",
+      "predicted": "番茄炭疽病",
+      "confidence": 0.7875,
+      "result_level": "low",
+      "status": "done",
+      "correct": false,
+      "low_marked": true,
+      "latency_ms": 19190.6,
+      "error": null
+    },
+    {
+      "id": "powdery_mildew_005",
+      "label": "白粉病",
+      "predicted": "番茄白粉病",
+      "confidence": 0.8925,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 46431.7,
+      "error": null
+    },
+    {
+      "id": "powdery_mildew_006",
+      "label": "白粉病",
+      "predicted": "健康",
+      "confidence": 0.95,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 4058.8,
+      "error": null
+    },
+    {
+      "id": "powdery_mildew_007",
+      "label": "白粉病",
+      "predicted": "番茄靶斑病",
+      "confidence": 0.63,
+      "result_level": "low",
+      "status": "done",
+      "correct": false,
+      "low_marked": true,
+      "latency_ms": 31930.6,
+      "error": null
+    },
+    {
+      "id": "powdery_mildew_008",
+      "label": "白粉病",
+      "predicted": "番茄早疫病",
+      "confidence": 0.861,
+      "result_level": "high",
+      "status": "done",
+      "correct": false,
+      "low_marked": false,
+      "latency_ms": 18193.6,
+      "error": null
+    },
+    {
+      "id": "healthy_001",
+      "label": "健康",
+      "predicted": "健康",
+      "confidence": 1.0,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 6554.8,
+      "error": null
+    },
+    {
+      "id": "healthy_002",
+      "label": "健康",
+      "predicted": "健康",
+      "confidence": 1.0,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 4732.1,
+      "error": null
+    },
+    {
+      "id": "healthy_003",
+      "label": "健康",
+      "predicted": "无法识别",
+      "confidence": 0.0,
+      "result_level": "low",
+      "status": "done",
+      "correct": false,
+      "low_marked": true,
+      "latency_ms": 23250.3,
+      "error": null
+    },
+    {
+      "id": "healthy_004",
+      "label": "健康",
+      "predicted": "健康",
+      "confidence": 0.99,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 8700.1,
+      "error": null
+    },
+    {
+      "id": "healthy_005",
+      "label": "健康",
+      "predicted": "健康",
+      "confidence": 0.0,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 10971.8,
+      "error": null
+    },
+    {
+      "id": "healthy_006",
+      "label": "健康",
+      "predicted": "健康",
+      "confidence": 1.0,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 3243.0,
+      "error": null
+    },
+    {
+      "id": "healthy_007",
+      "label": "健康",
+      "predicted": "健康",
+      "confidence": 1.0,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 3436.2,
+      "error": null
+    },
+    {
+      "id": "healthy_008",
+      "label": "健康",
+      "predicted": "健康",
+      "confidence": 0.95,
+      "result_level": "high",
+      "status": "done",
+      "correct": true,
+      "low_marked": false,
+      "latency_ms": 4683.5,
+      "error": null
+    }
+  ]
+}

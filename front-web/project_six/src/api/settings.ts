@@ -1,9 +1,9 @@
 /**
  * 文件说明：系统设置模块 API 封装。
- * 包含置信度阈值配置、家庭成员管理与服务号绑定状态接口。
+ * 包含置信度阈值配置、家庭成员管理、服务号绑定状态与推送邮箱绑定接口。
  */
 import { get, patch, post, put } from './request'
-import type { ConfidenceThreshold, Member, WxBindItem } from '@/types/farm'
+import type { ConfidenceThreshold, EmailBindInfo, EmailBindUpdateResult, Member, WxBindItem } from '@/types/farm'
 
 /**
  * 查询置信度阈值分病种配置列表。
@@ -61,4 +61,23 @@ export function updateMemberStatus(id: number, status: 0 | 1): Promise<void> {
  */
 export function getWxBind(): Promise<WxBindItem[]> {
   return get<WxBindItem[]>('/settings/wx-bind')
+}
+
+/**
+ * 查询当前用户的推送邮箱绑定信息。
+ * @returns 邮箱与绑定状态（未绑定时 email 为 null）
+ * @throws 请求失败时抛出异常
+ */
+export function getEmailBind(): Promise<EmailBindInfo> {
+  return get<EmailBindInfo>('/settings/email')
+}
+
+/**
+ * 绑定/修改当前用户的推送邮箱（保存即生效）。
+ * @param email 待绑定的邮箱地址（后端做格式与唯一性校验）
+ * @returns 保存结果（含绑定通知邮件发送结果 bind_mail_sent）
+ * @throws 格式非法返回 422、邮箱被他人绑定返回 400
+ */
+export function updateEmailBind(email: string): Promise<EmailBindUpdateResult> {
+  return put<EmailBindUpdateResult>('/settings/email', { email })
 }

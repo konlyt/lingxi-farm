@@ -81,11 +81,17 @@ def get_overview(db: Session) -> dict[str, Any]:
     plots = db.query(Plot).filter(Plot.status == 1).order_by(Plot.id.asc()).all()
 
     # 1) 采收禁令横幅（全部在种地块的 active 禁令）
+    # 按 (plot_id, ban_until, pesticide_name) 去重展示——历史重复禁令行只显示一条
     harvest_banners: list[dict[str, Any]] = []
+    seen_banners: set[tuple[int, str, str]] = set()
     plot_cards: list[dict[str, Any]] = []
     for plot in plots:
         restrictions = get_active_restrictions(db, plot.id)
         for restriction in restrictions:
+            key = (plot.id, str(restriction["ban_until"]), restriction["pesticide_name"])
+            if key in seen_banners:
+                continue
+            seen_banners.add(key)
             harvest_banners.append(
                 {
                     "plot_id": plot.id,

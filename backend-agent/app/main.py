@@ -145,6 +145,7 @@ from app.api import (  # noqa: E402
     settings,
 )
 from app.api import advisory as advisory_api  # noqa: E402
+from app.api.settings import email_router  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(plot.router)
@@ -162,6 +163,8 @@ app.include_router(export.router)
 app.include_router(calendar.router)
 app.include_router(overview.router)
 app.include_router(settings.router)
+# 邮箱绑定路由（owner/member 均可绑定自己的邮箱，独立于 require_owner 的 settings 主路由）
+app.include_router(email_router)
 
 
 @app.get("/", summary="健康检查")

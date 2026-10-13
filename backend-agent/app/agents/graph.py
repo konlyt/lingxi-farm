@@ -14,6 +14,7 @@
 """
 import logging
 import re
+from collections import Counter
 from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -21,12 +22,13 @@ from sqlalchemy.orm import Session
 
 from app.agents.checkpointer import checkpointer
 from app.agents.llm import clients
+from app.core.config import settings
 from app.models.advice import (
     ConfidenceThresholdConfig,
     WaterFertilizerAdvice,
     WeatherForecastCache,
 )
-from app.models.diagnosis import DiagnosisResult, PreventionPlan
+from app.models.diagnosis import DiagnosisResult, DiagnosisTask, PreventionPlan
 from app.models.image import CollectedImage
 from app.models.knowledge import HarvestRestriction, Pesticide
 from app.models.plot import Plot
@@ -44,6 +46,21 @@ HEALTHY_NAMES = {"健康", "healthy", "正常", "无病虫害"}
 # 病种分类别名映射（VLM 可能输出中文分类，配置表以英文键存储）
 _CATEGORY_ALIASES = {"常见病": "common", "罕见病": "rare", "默认": "default", "default病": "default"}
 
+# RAG 候选病名提取正则：2-6 个汉字 + 「病」/「虫害」结尾（覆盖「番茄早疫病」「细菌性斑点病」等）
+_DISEASE_NAME_PATTERN = re.compile(r"[\u4e00-\u9fa5]{2,6}(?:病|虫害)")
+
+# 候选病名停用词（泛称/病灶描述词，非具体病种名）
+_CANDIDATE_STOPWORDS = {
+    "病害", "病虫害", "虫害", "发病", "防病", "抗病", "病变", "病斑",
+    "病株", "病叶", "病果", "病梢", "病菌", "病因", "慢病", "叶部病", "叶病",
+}
+
+# 病名匹配碎片中的虚词（命中说明正则跨词截断，需清洗）
+_CANDIDATE_CONNECTIVES = set("的了在和是或与又及为成时易从把被使可会多有无不和")
+
+# 病名匹配常见前缀（剥离后取真实病名，如「又称轮纹病」→「轮纹病」）
+_CANDIDATE_PREFIXES = ("又称", "俗称", "也叫", "即")
+
 
 def _normalize_category(category: str | None) -> str | None:
     """归一化病种分类（中文别名 → 配置表英文键）。
@@ -57,6 +74,162 @@ def _normalize_category(category: str | None) -> str | None:
     if not category:
         return None
     return _CATEGORY_ALIASES.get(category.strip(), category.strip())
+
+
+def _clean_candidate_name(match: str) -> str | None:
+    """清洗单个候选病名匹配碎片：剥离前缀、剔除停用词与跨词截断碎片。
+
+    Args:
+        match: 正则匹配出的原始字符串。
+
+    Returns:
+        str | None: 清洗后的病种名；无法清洗为有效病名时返回 None。
+    """
+    name = match.strip()
+    for prefix in _CANDIDATE_PREFIXES:
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+    if len(name) < 3 or name in _CANDIDATE_STOPWORDS:
+        return None
+    # 末字「病」本身不算虚词，检查前段是否含虚词（跨词碎片特征）
+    body = name[:-1]
+    if not any(ch in _CANDIDATE_CONNECTIVES for ch in body):
+        return name
+    # 取最后一个虚词之后的片段再校验一次（如「与靶斑病」→「靶斑病」）
+    pattern = "[" + re.escape("".join(_CANDIDATE_CONNECTIVES)) + "]"
+    tail = re.split(pattern, name)[-1]
+    if len(tail) >= 3 and tail.endswith(("病", "虫害")) and tail not in _CANDIDATE_STOPWORDS \
+            and not any(ch in _CANDIDATE_CONNECTIVES for ch in tail[:-1]):
+        return tail
+    return None
+
+
+def _enhance_enabled() -> bool:
+    """读取 VLM 置信度增强开关（config 字段未就绪时默认开启，容错并行配置）。
+
+    Returns:
+        bool: 开关开启返回 True；VLM_ENHANCE_ENABLED=false 时返回 False（回落单次调用）。
+    """
+    try:
+        return bool(getattr(settings, "vlm_enhance_enabled", True))
+    except Exception:  # noqa: BLE001 配置读取异常时按开启处理，保持增强能力
+        return True
+
+
+def _extract_disease_candidates(hits: list[dict[str, Any]], limit: int = 8) -> list[str]:
+    """从 RAG 检索命中文档标题提取病种名候选集合（正则提取+清洗，按相似度保序去重）。
+
+    仅使用文档标题（标题格式规整、病名准确度高）；正文自由文本碎片噪音大，
+    不参与候选提取；标题无命中时由调用方以首轮病名兜底。
+
+    Args:
+        hits: vector_store.search 返回的命中列表 [{title, text, similarity, ...}]。
+        limit: 候选集上限，默认 8。
+
+    Returns:
+        list[str]: 去重后的病种名列表（可能为空）。
+    """
+    names: list[str] = []
+    for hit in hits:
+        title = str(hit.get("title") or "")
+        for match in _DISEASE_NAME_PATTERN.findall(title):
+            name = _clean_candidate_name(match)
+            if name is None or name in names:
+                continue
+            names.append(name)
+    return names[:limit]
+
+
+def _fetch_few_shot_cases(db: Session, crop_name: str, limit: int = 3) -> list[str]:
+    """查询案例库中同作物已确认/纠正案例，格式化为文本 few-shot 行。
+
+    Args:
+        db: 数据库会话。
+        crop_name: 地块当前作物名（按其过滤同作物案例）。
+        limit: 最多返回条数，默认 3。
+
+    Returns:
+        list[str]: few-shot 文本行列表（如「案例：AI初判「X」→ 最终确认「Y」（备注：Z）」）。
+    """
+    from app.models.case import CaseLibrary  # 局部导入避免循环依赖
+
+    rows = (
+        db.query(CaseLibrary)
+        .join(DiagnosisTask, CaseLibrary.task_id == DiagnosisTask.id)
+        .join(Plot, DiagnosisTask.plot_id == Plot.id)
+        .filter(
+            Plot.crop_name == crop_name,
+            CaseLibrary.status.in_(["confirmed", "corrected"]),
+            CaseLibrary.final_disease_name.isnot(None),
+        )
+        .order_by(CaseLibrary.id.desc())
+        .limit(limit)
+        .all()
+    )
+    lines: list[str] = []
+    for row in rows:
+        line = f"案例：AI初判「{row.ai_disease_name}」→ 最终确认「{row.final_disease_name}」"
+        if row.note:
+            line += f"（备注：{row.note}）"
+        lines.append(line)
+    return lines
+
+
+def _vote_fuse(samples: list[dict[str, Any]], first_disease: str,
+               first_category: str | None, first_confidence: float) -> dict[str, Any]:
+    """三次采样投票融合：按一致度上浮/保均值/降权。
+
+    规则：3/3 同病名 → 一致样本均值 ×1.05（封顶 0.99）；2/3 同病名 →
+    一致样本均值（剔除不一致样本）不上浮；全不一致 → 回落首轮病名，
+    融合置信度 = 首轮置信度 ×0.8（倾向低置信）。
+
+    Args:
+        samples: vlm_diagnose_multi 三次采样明细列表。
+        first_disease: 首轮判定病名（全不一致时回落使用）。
+        first_category: 首轮病种分类（可空）。
+        first_confidence: 首轮判定置信度（0-1）。
+
+    Returns:
+        dict: {consistent_count, final_disease, final_category, final_description,
+              fused_confidence, rule}。
+    """
+    names = [str(item.get("disease_name") or "unknown").strip() for item in samples]
+    top_name, top_count = Counter(names).most_common(1)[0]
+    if top_count == 3:
+        confs = [max(0.0, min(1.0, float(item.get("confidence") or 0.0))) for item in samples]
+        fused = min(0.99, (sum(confs) / len(confs)) * 1.05)
+        winner = samples[names.index(top_name)]
+        return {
+            "consistent_count": 3,
+            "final_disease": top_name,
+            "final_category": _normalize_category(str(winner.get("disease_category") or "default")),
+            "final_description": str(winner.get("description") or ""),
+            "fused_confidence": round(fused, 4),
+            "rule": "3/3_consensus_mean_x1.05",
+        }
+    if top_count == 2:
+        confs = [
+            max(0.0, min(1.0, float(item.get("confidence") or 0.0)))
+            for item, name in zip(samples, names) if name == top_name
+        ]
+        fused = sum(confs) / len(confs)
+        winner = samples[names.index(top_name)]
+        return {
+            "consistent_count": 2,
+            "final_disease": top_name,
+            "final_category": _normalize_category(str(winner.get("disease_category") or "default")),
+            "final_description": str(winner.get("description") or ""),
+            "fused_confidence": round(fused, 4),
+            "rule": "2/3_majority_mean_no_uplift",
+        }
+    return {
+        "consistent_count": 0,
+        "final_disease": first_disease,
+        "final_category": first_category,
+        "final_description": "三次采样结果不一致，回落首轮判定结果",
+        "fused_confidence": round(max(0.0, min(1.0, first_confidence)) * 0.8, 4),
+        "rule": "0/3_inconsistent_first_x0.8",
+    }
 
 
 class FarmState(TypedDict, total=False):
@@ -176,7 +349,12 @@ def build_farm_graph(db: Session):
         return {"intent": intent}
 
     def diagnosis_node(state: FarmState) -> dict[str, Any]:
-        """病虫害识别节点：VLM 识别 → 阈值判定 → 双路结果落库。
+        """病虫害识别节点（两段式）：首轮快速判定 → 异常结果增强判定（采样投票融合）。
+
+        首轮：VLM 单次调用（temperature=0）快速判定；结果为 healthy/未识别/降级时
+        直接走原逻辑。增强（仅异常结果且 vlm_enhance_enabled 开启）：RAG 检索提取
+        病种封闭候选集 + 案例库同作物 few-shot 注入 → VLM 三次采样（temperature=0.4）
+        → 投票融合（3/3 上浮、2/3 均值、全不一致回落首轮×0.8）。
 
         Args:
             state: 当前图状态（需含 image_ids/task_id/plot_id）。
@@ -208,7 +386,9 @@ def build_farm_graph(db: Session):
 
         raw_output: dict[str, Any] = {}
         fallback_used = False
+        fused_note = "单路 VLM 结果直通融合"
         try:
+            # 首轮快速判定：temperature 默认 0（clients 函数默认值），3 位置参数调用保持 mock 兼容
             vlm_result = clients.diagnose_image_with_vlm(str(image_path), crop_name, growth_stage)
             raw_output = {"source": "vlm", "raw": vlm_result}
         except Exception as vlm_exc:
@@ -221,9 +401,60 @@ def build_farm_graph(db: Session):
         disease_category = _normalize_category(str(vlm_result.get("disease_category") or "default"))
         confidence = max(0.0, min(1.0, float(vlm_result.get("confidence") or 0.0)))
         description = str(vlm_result.get("description") or "")
-        threshold = _get_threshold(db, disease_category)
         is_healthy = disease_name.lower() in HEALTHY_NAMES
 
+        # ---------- 增强判定：仅对首轮异常结果（非降级/非健康/非未识别）且开关开启 ----------
+        if _enhance_enabled() and not fallback_used and not is_healthy and disease_name.lower() != "unknown":
+            try:
+                # a. RAG 候选约束：首轮病名 + 地块作物检索知识库，正则提取病种名封闭候选集
+                hits = vector_store.search(f"{crop_name} {disease_name} 症状 识别", top_k=5)
+                candidates = _extract_disease_candidates(hits)
+                if disease_name not in candidates:
+                    candidates.insert(0, disease_name)
+                # b. 案例 few-shot：案例库同作物已确认/纠正案例（最多 3 条，文本形式）
+                few_shot_lines = _fetch_few_shot_cases(db, crop_name)
+                prompt_lines = [
+                    f"作物：{crop_name}，生育期：{growth_stage}。",
+                    f"请识别图像中的病虫害情况。首轮初判：「{disease_name}」（置信度 {round(confidence, 2)}）。",
+                    f"病名必须从以下候选中选择：{'、'.join(candidates) if candidates else disease_name}；"
+                    "若均不符合可选 unknown。",
+                ]
+                if few_shot_lines:
+                    prompt_lines.append("该作物历史已确认案例（供参考）：\n" + "\n".join(few_shot_lines))
+                prompt_lines.append("请综合图像证据给出最终判定，严格只输出一个 JSON 对象。")
+                logger.info(
+                    "VLM 置信度增强启动: 首轮=%s 候选集=%s few-shot=%d条",
+                    disease_name, candidates, len(few_shot_lines),
+                )
+                # c. 三次采样投票
+                samples = clients.vlm_diagnose_multi([str(image_path)], "\n".join(prompt_lines), n=3)
+                # d. 融合规则
+                vote = _vote_fuse(samples, disease_name, disease_category, confidence)
+                disease_name = vote["final_disease"]
+                disease_category = vote["final_category"] or disease_category
+                confidence = vote["fused_confidence"]
+                description = vote["final_description"] or description
+                is_healthy = disease_name.lower() in HEALTHY_NAMES
+                fused_note = f"三轮采样投票融合（{vote['rule']}）"
+                raw_output["first_round"] = vlm_result
+                raw_output["samples"] = samples
+                raw_output["vote"] = {
+                    "consistent_count": vote["consistent_count"],
+                    "final_disease": vote["final_disease"],
+                    "fused_confidence": vote["fused_confidence"],
+                    "rule": vote["rule"],
+                }
+                raw_output["candidates"] = candidates
+                raw_output["few_shot_used"] = len(few_shot_lines)
+                logger.info(
+                    "VLM 投票融合完成: rule=%s final=%s fused_conf=%s",
+                    vote["rule"], disease_name, confidence,
+                )
+            except Exception as exc:  # noqa: BLE001 增强阶段失败回落首轮结果，不阻断诊断链路
+                logger.warning("VLM 置信度增强失败，回落首轮单次结果: %s", exc)
+                raw_output["enhance_error"] = str(exc)[:200]
+
+        threshold = _get_threshold(db, disease_category)
         diagnosis = {
             "disease_name": disease_name,
             "disease_category": disease_category,
@@ -237,7 +468,7 @@ def build_farm_graph(db: Session):
         }
         raw_output["threshold"] = threshold
 
-        # 双路结果落库：vlm 路径 + fused 路径（本实现 fused 即 VLM/降级结果）
+        # 双路结果落库：vlm 路径 + fused 路径（增强开启时 fused 记录投票融合结论）
         task_id = state.get("task_id")
         if task_id:
             db.add_all(
@@ -258,7 +489,7 @@ def build_farm_graph(db: Session):
                         disease_name=disease_name,
                         disease_category=disease_category,
                         confidence=confidence,
-                        raw_output={"fused_note": "单路 VLM 结果直通融合", "description": description},
+                        raw_output={"fused_note": fused_note, "description": description},
                     ),
                 ]
             )
@@ -413,12 +644,31 @@ def build_farm_graph(db: Session):
                     break
             if row is None or row.forbidden_flag == "banned":
                 continue  # 禁用药不建禁令（方案已拦截），名录外药剂无法计算间隔期
+            new_ban_until = applied_day.fromordinal(applied_day.toordinal() + row.safety_interval_days)
+            existing_ban = (
+                db.query(HarvestRestriction)
+                .filter(
+                    HarvestRestriction.plot_id == plot_id,
+                    HarvestRestriction.pesticide_id == row.id,
+                    HarvestRestriction.status == "active",
+                )
+                .first()
+            )
+            if existing_ban is not None:
+                # 同地块同药剂已有生效禁令：仅当新截止日更晚时延长，不重复创建
+                # （修复：每次诊断重复建禁令导致实况面板角标重复）
+                if new_ban_until > existing_ban.ban_until:
+                    existing_ban.ban_until = new_ban_until
+                    existing_ban.plan_id = prevention.id
+                    db.flush()
+                restrictions.append({"pesticide": row.name, "ban_until": fmt_date(existing_ban.ban_until)})
+                continue
             restriction = HarvestRestriction(
                 plot_id=plot_id,
                 plan_id=prevention.id,
                 pesticide_id=row.id,
                 applied_at=applied_day,
-                ban_until=applied_day.fromordinal(applied_day.toordinal() + row.safety_interval_days),
+                ban_until=new_ban_until,
                 status="active",
             )
             db.add(restriction)

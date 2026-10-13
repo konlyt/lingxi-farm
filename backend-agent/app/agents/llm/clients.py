@@ -24,6 +24,16 @@ logger = logging.getLogger("farm_llm")
 LLM_TIMEOUT = 60.0
 # 失败重试次数（openai SDK 自身 max_retries 之外的业务级重试）
 LLM_RETRY = 1
+# VLM 增强采样温度（三次独立采样投票用，兼顾稳定性与多样性）
+VLM_SAMPLE_TEMPERATURE = 0.4
+# VLM 识别专家系统提示词（严格 JSON 输出约束，首轮与增强采样共用）
+_VLM_JSON_SYSTEM = (
+    "你是农作物病虫害识别专家。请严格只输出一个 JSON 对象，不要输出任何其他文字，"
+    '格式为：{"disease_name": "病害或虫害中文名称，健康则写 健康", '
+    '"disease_category": "常见病/罕见病 二选一", '
+    '"confidence": 0到1之间的小数, '
+    '"description": "50字以内的识别依据描述"}'
+)
 
 
 def _build_client(base_url: str, api_key: str) -> OpenAI:
@@ -94,13 +104,17 @@ def _image_file_to_data_url(file_path: str) -> str:
     return f"data:image/{suffix};base64,{base64.b64encode(data).decode('utf-8')}"
 
 
-def diagnose_image_with_vlm(image_path: str, crop_name: str, growth_stage: str) -> dict[str, Any]:
+def diagnose_image_with_vlm(image_path: str, crop_name: str, growth_stage: str,
+                            temperature: float = 0.0, prompt: str | None = None) -> dict[str, Any]:
     """调用豆包 VLM 对图像做病虫害识别，输出严格 JSON。
 
     Args:
         image_path: 本地图像文件路径。
-        crop_name: 作物名称（辅助识别）。
-        growth_stage: 生育期（辅助识别）。
+        crop_name: 作物名称（辅助识别；prompt 非空时仅作占位）。
+        growth_stage: 生育期（辅助识别；prompt 非空时仅作占位）。
+        temperature: 采样温度（默认 0，首轮快速判定；增强采样传 0.4）。
+        prompt: 完整用户提示词（增强判定的候选集/few-shot 注入用；
+                None 时按 crop_name/growth_stage 组装默认识别文案）。
 
     Returns:
         dict: {disease_name, disease_category, confidence, description}；
@@ -110,14 +124,10 @@ def diagnose_image_with_vlm(image_path: str, crop_name: str, growth_stage: str) 
         ValueError: 模型输出无法解析为合法 JSON 时抛出。
         Exception: API 调用两次均失败时抛出。
     """
-    system = (
-        "你是农作物病虫害识别专家。请严格只输出一个 JSON 对象，不要输出任何其他文字，"
-        '格式为：{"disease_name": "病害或虫害中文名称，健康则写 健康", '
-        '"disease_category": "常见病/罕见病 二选一", '
-        '"confidence": 0到1之间的小数, '
-        '"description": "50字以内的识别依据描述"}'
-    )
-    user_text = f"作物：{crop_name}，生育期：{growth_stage}。请识别图像中的病虫害情况。"
+    if prompt is None:
+        user_text = f"作物：{crop_name}，生育期：{growth_stage}。请识别图像中的病虫害情况。"
+    else:
+        user_text = prompt
     data_url = _image_file_to_data_url(image_path)
     last_exc: Exception | None = None
     for _ in range(LLM_RETRY + 1):
@@ -125,7 +135,7 @@ def diagnose_image_with_vlm(image_path: str, crop_name: str, growth_stage: str) 
             resp = doubao_vlm_client.chat.completions.create(
                 model=settings.doubao_vlm_model,
                 messages=[
-                    {"role": "system", "content": system},
+                    {"role": "system", "content": _VLM_JSON_SYSTEM},
                     {
                         "role": "user",
                         "content": [
@@ -134,17 +144,58 @@ def diagnose_image_with_vlm(image_path: str, crop_name: str, growth_stage: str) 
                         ],
                     },
                 ],
-                temperature=0.1,
+                temperature=temperature,
             )
             content = resp.choices[0].message.content or ""
             return _extract_json(content)
-        except ValueError as exc:
-            # JSON 解析失败不重试（重试同样输入无意义），直接抛出
-            raise exc
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             logger.warning("豆包 VLM 调用失败，准备重试: %s", exc)
     raise last_exc  # type: ignore[misc]
+
+
+def vlm_diagnose_multi(image_paths: list[str], prompt: str, n: int = 3) -> list[dict[str, Any]]:
+    """增强判定：同一图像以增强提示词独立采样 n 次（temperature=0.4）。
+
+    每次采样为一次独立的 VLM 调用（互不影响，输出随温度自然波动）；
+    采样统一经由 diagnose_image_with_vlm 调用点发起（模块级运行时查找，
+    单元测试 monkeypatch 该函数时采样随之失效并向上抛出，由调用方回落
+    首轮结果，保证测试全程不发起真实外部请求）。
+
+    Args:
+        image_paths: 本地图像文件路径列表（识别主图取第一张）。
+        prompt: 增强用户提示词（由调用方组装，含封闭候选集与 few-shot 案例）。
+        n: 采样次数，默认 3。
+
+    Returns:
+        list[dict]: n 次采样明细列表，每项为
+              {disease_name, disease_category, confidence, description}。
+
+    Raises:
+        ValueError: 某次采样输出无法解析为 JSON 且重试仍失败时抛出。
+        FileNotFoundError: 图像文件不存在时抛出。
+        Exception: 某次采样调用重试后仍失败时抛出（含测试 mock 桩签名不兼容）。
+    """
+    image_path = image_paths[0] if image_paths else ""
+    samples: list[dict[str, Any]] = []
+    for index in range(n):
+        last_exc: Exception | None = None
+        for _ in range(LLM_RETRY + 1):
+            try:
+                samples.append(
+                    diagnose_image_with_vlm(
+                        image_path, "", "",
+                        temperature=VLM_SAMPLE_TEMPERATURE, prompt=prompt,
+                    )
+                )
+                break
+            except Exception as exc:  # noqa: BLE001 温度>0 输出可变，JSON 解析失败同样参与重试
+                last_exc = exc
+                logger.warning("VLM 增强采样第 %d 次失败，准备重试: %s", index + 1, exc)
+        else:
+            # 该次采样重试后仍失败：整体增强失败，向上抛出由调用方回落
+            raise last_exc  # type: ignore[misc]
+    return samples
 
 
 def _extract_json(text: str) -> dict[str, Any]:

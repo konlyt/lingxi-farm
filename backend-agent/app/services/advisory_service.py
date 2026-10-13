@@ -3,6 +3,7 @@
 提供水肥建议（种植决策智能体生成，uk_plot_date 幂等）、
 大棚环境调控建议（未来 12 小时）与每日农情简报生成/查询。
 生成链路经 LangGraph advice 意图（DeepSeek 严格 JSON 输出）。
+每日简报生成后向已绑定邮箱的启用用户真实推送简报邮件并回写 push_status。
 """
 import logging
 from datetime import date as date_type
@@ -16,6 +17,8 @@ from app.core.response import BusinessException
 from app.models.advice import DailyBrief, WaterFertilizerAdvice, WeatherForecastCache
 from app.models.alert import Alert
 from app.models.plot import Plot
+from app.models.user import SysUser
+from app.services import notifier
 from app.services.plot_service import get_latest_env
 from app.utils.time_utils import fmt_date, now, today
 
@@ -150,6 +153,49 @@ def get_environment_advice(db: Session, plot_id: int) -> dict[str, Any]:
     return {"plot_id": plot_id, "plot_name": plot.name, "items": result.get("items", [])}
 
 
+def _push_brief_emails(db: Session, brief: DailyBrief) -> bool:
+    """向已绑定邮箱的启用用户推送每日农情简报邮件。
+
+    邮箱通道未配置或无绑定用户时不发送；逐用户真实发送（notifier 内部重试），
+    至少一封成功视为推送成功。任何异常均捕获降级，不影响简报数据落库。
+
+    Args:
+        db: 数据库会话（只读查询用户）。
+        brief: 已生成 content 的简报 ORM 实例。
+
+    Returns:
+        bool: 至少一封发送成功返回 True；未发送或全部失败返回 False。
+
+    Raises:
+        None: 不向外抛出任何异常，异常仅记日志并按推送失败处理。
+    """
+    try:
+        if not notifier.is_email_configured():
+            logger.info("邮箱通道未配置，简报邮件跳过发送（push_status 置 failed）")
+            return False
+        users = (
+            db.query(SysUser)
+            .filter(SysUser.status == 1, SysUser.email_bind_status == 1, SysUser.email.isnot(None))
+            .all()
+        )
+        if not users:
+            logger.info("无已绑定邮箱用户，简报邮件跳过发送")
+            return False
+        html = notifier.render_brief_email(brief)
+        subject = f"【每日农情简报】{brief.brief_date.isoformat()}"
+        sent_any = False
+        for user in users:
+            sent, err = notifier.send_email(user.email, subject, html)
+            if sent:
+                sent_any = True
+            else:
+                logger.warning("简报邮件发送失败: user=%s err=%s", user.username, err)
+        return sent_any
+    except Exception as exc:  # noqa: BLE001 推送异常降级，不影响简报落库
+        logger.warning("简报邮件推送异常: %s", exc)
+        return False
+
+
 def generate_daily_brief(db: Session, brief_date: Optional[date_type] = None) -> DailyBrief:
     """生成每日农情简报：各地块实况摘要 + 今日待办 + 天气提醒。
 
@@ -224,14 +270,16 @@ def generate_daily_brief(db: Session, brief_date: Optional[date_type] = None) ->
     }
     brief = db.query(DailyBrief).filter(DailyBrief.brief_date == target).first()
     if brief is None:
-        brief = DailyBrief(brief_date=target, content=content, push_status="sent", pushed_at=now())
+        brief = DailyBrief(brief_date=target, content=content)
         db.add(brief)
     else:
         brief.content = content
-        brief.push_status = "sent"
-        brief.pushed_at = now()
+    # 简报邮件真实推送：至少一封成功置 sent，否则 failed（未配置/无绑定用户/全部失败）
+    push_status = "sent" if _push_brief_emails(db, brief) else "failed"
+    brief.push_status = push_status
+    brief.pushed_at = now()
     db.commit()
-    logger.info("每日简报已生成: date=%s", target)
+    logger.info("每日简报已生成: date=%s push_status=%s", target, push_status)
     return brief
 
 

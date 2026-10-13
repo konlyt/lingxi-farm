@@ -101,6 +101,23 @@ def create_tables() -> None:
     print("[2/6] 全部业务表创建完成（create_all）")
 
 
+def apply_email_fields_migration() -> None:
+    """对 sys_user 执行邮箱字段幂等迁移（email / email_bind_status）。
+
+    复用 scripts/migrate_email_fields.py：存量老库补列（INFORMATION_SCHEMA 判重），
+    新建库列已存在时自动跳过，重复运行无副作用。
+
+    Raises:
+        Exception: ALTER 失败（权限不足等）时打印警告并降级，不中断初始化。
+    """
+    from scripts.migrate_email_fields import migrate as migrate_email_fields
+
+    try:
+        migrate_email_fields()
+    except Exception as exc:  # noqa: BLE001 迁移失败降级不阻塞初始化
+        print(f"[2.5/6] [WARN] sys_user 邮箱字段迁移失败：{exc}")
+
+
 def apply_sensor_partition() -> None:
     """对 sensor_reading 执行按月分区（RANGE TO_DAYS(reported_at)）。
 
@@ -575,6 +592,7 @@ def main() -> None:
     print("========== 农场智能管护系统 数据库初始化开始 ==========")
     create_database()
     create_tables()
+    apply_email_fields_migration()
     apply_sensor_partition()
 
     session = SessionLocal()
