@@ -2,7 +2,7 @@
 /**
  * 文件说明：系统设置页（19）。
  * 置信度阈值分病种配置（owner 可编辑，0–1 两位小数）、家庭成员管理（邀请/停用）、
- * 消息推送（邮箱绑定 + 微信服务号状态「暂缓接入」标注）、修改密码表单。
+ * 消息推送（邮箱绑定 + 微信服务号状态「暂缓接入」标注）、修改密码表单、数据导出（自侧边栏整合）。
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -21,6 +21,7 @@ import {
 import { changePassword } from '@/api/auth'
 import { useAsyncData } from '@/composables/useAsyncData'
 import StateWrap from '@/components/StateWrap.vue'
+import ExportsView from '@/views/exports/ExportsView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { wxBindTag } from '@/utils/format'
 import { confirmAction } from '@/utils/confirm'
@@ -380,6 +381,13 @@ async function submitPassword(): Promise<void> {
             </el-form-item>
           </el-form>
         </el-tab-pane>
+
+        <!-- 数据导出（自侧边栏整合，懒加载复用导出页组件） -->
+        <el-tab-pane label="数据导出" name="exports" lazy>
+          <div class="exports-embed">
+            <ExportsView />
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </div>
 
@@ -405,6 +413,17 @@ async function submitPassword(): Promise<void> {
 </template>
 
 <style scoped>
+/* 数据导出嵌入样式：抹平子页面自带的卡片外框，避免卡中卡 */
+.exports-embed :deep(.page) {
+  max-width: none;
+}
+
+.exports-embed :deep(.page-card) {
+  padding: 0;
+  margin-bottom: 0;
+  background: transparent;
+}
+
 .tab-actions {
   display: flex;
   align-items: center;

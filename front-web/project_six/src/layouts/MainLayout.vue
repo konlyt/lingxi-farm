@@ -30,6 +30,18 @@ const pageTitle = computed(() => {
 /** 角色中文标签 */
 const roleLabel = computed(() => (auth.isOwner ? '农场主' : '家庭成员'))
 
+/** 头像字符（昵称/登录名首字） */
+const avatarChar = computed(() => (auth.user?.nickname || auth.user?.username || '农').slice(0, 1))
+
+/**
+ * 用户下拉命令分发。
+ * @param command 命令标识
+ */
+function handleUserCommand(command: string | number | object): void {
+  if (command === 'settings') void router.push('/settings')
+  else if (command === 'logout') void handleLogout()
+}
+
 /**
  * 跳转到指定路由。
  * @param path 目标路径
@@ -102,12 +114,6 @@ onMounted(() => {
         <el-menu-item index="/calendar">
           <el-icon><Calendar /></el-icon><span>农事日历</span>
         </el-menu-item>
-        <el-menu-item index="/exports">
-          <el-icon><Download /></el-icon><span>数据导出</span>
-        </el-menu-item>
-        <el-menu-item index="/settings">
-          <el-icon><Setting /></el-icon><span>系统设置</span>
-        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -115,11 +121,31 @@ onMounted(() => {
       <!-- 顶部条：标题 + 用户信息 -->
       <el-header class="app-header" height="52px">
         <span class="header-title">{{ pageTitle || (isMobile ? '农场智能管护系统' : '') }}</span>
-        <div class="header-user">
-          <el-tag :type="auth.isOwner ? 'danger' : 'primary'" size="small">{{ roleLabel }}</el-tag>
-          <span class="user-name">{{ auth.user?.nickname ?? auth.user?.username ?? '未登录' }}</span>
-          <el-button link type="primary" @click="handleLogout">退出</el-button>
-        </div>
+        <el-dropdown trigger="click" @command="handleUserCommand">
+          <div class="user-trigger">
+            <el-avatar :size="30" class="user-avatar">{{ avatarChar }}</el-avatar>
+            <span class="user-name">{{ auth.user?.nickname ?? auth.user?.username ?? '未登录' }}</span>
+            <el-tag :type="auth.isOwner ? 'danger' : 'primary'" size="small">{{ roleLabel }}</el-tag>
+            <el-icon class="user-arrow"><ArrowDown /></el-icon>
+          </div>
+          <template #dropdown>
+            <el-dropdown-menu class="user-menu">
+              <div class="menu-profile">
+                <el-avatar :size="40" class="user-avatar">{{ avatarChar }}</el-avatar>
+                <div class="menu-profile-info">
+                  <div class="menu-profile-name">{{ auth.user?.nickname ?? auth.user?.username ?? '未登录' }}</div>
+                  <div class="menu-profile-meta">{{ roleLabel }} · {{ auth.user?.username ?? '-' }}</div>
+                </div>
+              </div>
+              <el-dropdown-item divided command="settings">
+                <el-icon><Setting /></el-icon>系统设置
+              </el-dropdown-item>
+              <el-dropdown-item command="logout">
+                <el-icon><SwitchButton /></el-icon>退出登录
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </el-header>
 
       <el-main class="app-main">
@@ -207,15 +233,70 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.header-user {
+/* ===== 右上角用户下拉 ===== */
+.user-trigger {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+}
+
+.user-trigger:hover {
+  background: #f5f7fa;
+}
+
+.user-avatar {
+  background: #409eff;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  flex: none;
 }
 
 .user-name {
   font-size: 13px;
-  color: #606266;
+  color: #303133;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-arrow {
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 下拉内的个人信息头 */
+.menu-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 12px;
+  min-width: 200px;
+  cursor: default;
+}
+
+.menu-profile-info {
+  min-width: 0;
+}
+
+.menu-profile-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-profile-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #909399;
 }
 
 .app-main {
