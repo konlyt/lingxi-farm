@@ -20,6 +20,8 @@ export default defineConfig({
     },
   },
   server: {
+    /** 监听全部回环地址：同时支持 127.0.0.1 / localhost / 局域网移动端真机访问 */
+    host: true,
     proxy: {
       /** 后端业务接口代理 */
       '/api': { target: 'http://localhost:8000', changeOrigin: true },

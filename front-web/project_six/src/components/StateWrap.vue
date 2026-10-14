@@ -13,8 +13,10 @@ withDefaults(
     rows?: number
     /** 最小高度（如 '300px'） */
     minHeight?: string
+    /** 自定义失败提示文案（如区分「记录不存在」与网络异常），缺省用通用文案 */
+    failedText?: string
   }>(),
-  { loading: false, failed: false, rows: 5, minHeight: '' },
+  { loading: false, failed: false, rows: 5, minHeight: '', failedText: '' },
 )
 
 /** 事件：点击重试按钮 */
@@ -25,7 +27,7 @@ defineEmits<{ (e: 'retry'): void }>()
   <div class="state-wrap" :style="minHeight ? { minHeight } : undefined">
     <el-skeleton v-if="loading" :rows="rows" animated />
     <div v-else-if="failed" class="state-failed">
-      <el-alert title="数据加载失败，请检查网络或稍后再试" type="error" show-icon :closable="false" />
+      <el-alert :title="failedText || '数据加载失败，请检查网络或稍后再试'" type="error" show-icon :closable="false" />
       <el-button type="primary" plain size="small" @click="$emit('retry')">重试</el-button>
     </div>
     <slot v-else />

@@ -1,948 +1,818 @@
 <script setup lang="ts">
 /**
- * 文件说明：自用监测大屏页（16，仅 owner）。
- * 科技风三段式布局（1920×1080 设计稿，transform scale 等比适配）：
- * 左列 环境实况 KPI + 地块虫情密度与墒情；中央 园区主视觉（热点标注）+ 设备指标翻牌 + 实时预警跑马灯；
- * 右列 诊断趋势 + 病虫害类型分布。各面板独立加载/失败重试；60 秒定时刷新。
+ * 文件说明：监测大屏 · 3D 数字孪生页（完全重构版，仅 owner）。
+ * 参考智慧大棚孪生中控风格：全屏三维场景打底（完整大棚/露天地块建模，360° 自由视角），
+ * 左侧环境调控中枢面板（环境实时数据/设备监控/时间轴/群体健康总览），右侧巡检 Agent。
+ * 数据源：getDashboardStats（60s 轮询）+ getDevices（按地块），地块下拉切换（大棚 ↔ 露天自动换建模）。
+ * 原三段式 2D 大屏保留为「经典视图」，路由 ?view=2d 直达，WebGL 失败自动回退。
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import dayjs from 'dayjs'
-import 'dayjs/locale/zh-cn'
-
-dayjs.locale('zh-cn')
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useGreenhouseScene } from '@/composables/useGreenhouseScene'
 import { getDashboardStats } from '@/api/overview'
+import { getDevices } from '@/api/devices'
 import { useAsyncData } from '@/composables/useAsyncData'
-import StateWrap from '@/components/StateWrap.vue'
-import EChart from '@/components/EChart.vue'
-import TechPanel from '@/components/TechPanel.vue'
-import { formatDateTime } from '@/utils/format'
-import type { EChartsOption } from 'echarts'
+import ClassicDashboard from '@/views/bigscreen/ClassicDashboard.vue'
+import type { Device } from '@/types/farm'
+import type { TwinSceneKind } from '@/three/scene/greenhouse'
 
-/** 面板统一数据加载器（同一聚合接口，独立实例实现单面板失败独立重试） */
-function makePanel() {
-  return useAsyncData(getDashboardStats)
-}
+const route = useRoute()
+const router = useRouter()
 
-/** 诊断趋势面板 */
-const trendPanel = makePanel()
-/** 类型分布面板 */
-const piePanel = makePanel()
-/** 虫情密度面板 */
-const densityPanel = makePanel()
-/** 设备健康面板 */
-const devicePanel = makePanel()
-/** 预警流面板 */
-const alertPanel = makePanel()
-/** 环境实况面板 */
-const envPanel = makePanel()
+/** 画布与容器引用 */
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+const containerRef = ref<HTMLDivElement | null>(null)
 
-/** 全部面板加载器（定时刷新用） */
-const allPanels = [trendPanel, piePanel, densityPanel, devicePanel, alertPanel, envPanel]
+/** 引擎句柄 */
+const handle = useGreenhouseScene()
 
-/** 刷新定时器句柄 */
+/** WebGL 初始化失败标记（失败后锁定经典视图） */
+const sceneFailed = ref(false)
+
+/** 视图模式（路由 ?view=2d 时默认经典视图，否则默认 3D 孪生） */
+const view3d = ref((route.query.view as string | undefined) !== '2d')
+
+/* ================= 数据加载 ================= */
+
+/** 大屏聚合数据（60s 轮询） */
+const stats = useAsyncData(getDashboardStats)
+
+/** 轮询定时器句柄 */
 let refreshTimer: number | undefined
 
-/** 科技风主色板 */
-const palette = ['#4ea6ff', '#35d0ba', '#fac775', '#f0655f', '#9a6fe0', '#36cfc9'] as const
+/** 地块选项（来自环境实况：含类型） */
+const plotOptions = computed(() =>
+  (stats.data.value?.env_realtime ?? []).map((r) => ({
+    id: r.plot_id,
+    name: r.plot_name,
+    type: r.type,
+  })),
+)
 
-/** 轴文字统一色 */
-const AXIS_TEXT = '#7fa8cf' as const
+/** 当前选中地块 ID */
+const plotId = ref<number | null>(null)
 
-/** 分隔线统一色 */
-const SPLIT_LINE = 'rgba(126, 180, 235, 0.12)' as const
-
-/* ================= 等比缩放适配 ================= */
-
-/** 视口容器引用 */
-const viewport = ref<HTMLDivElement | null>(null)
-
-/** 当前横纵缩放比例（各自拉伸铺满视口，不留黑边） */
-const scaleXY = ref({ x: 1, y: 1 })
+/** 设备列表（按地块过滤） */
+const devices = ref<Device[]>([])
+/** 设备加载中 */
+const devicesLoading = ref(false)
+/** 设备加载失败 */
+const devicesFailed = ref(false)
 
 /**
- * 依据视口尺寸计算 1920×1080 设计稿的横纵缩放比例。
+ * 加载当前地块设备列表。
  */
-function updateScale(): void {
-  const el = viewport.value
-  if (!el) return
-  scaleXY.value = { x: el.clientWidth / 1920, y: el.clientHeight / 1080 }
+async function loadDevices(): Promise<void> {
+  if (plotId.value === null) {
+    devices.value = []
+    return
+  }
+  devicesLoading.value = true
+  devicesFailed.value = false
+  try {
+    devices.value = await getDevices({ plot_id: plotId.value })
+  } catch {
+    devicesFailed.value = true
+  } finally {
+    devicesLoading.value = false
+  }
 }
 
-/* ================= 顶栏时钟 ================= */
-
-/** 时钟文本 */
-const clockText = ref(dayjs().format('YYYY-MM-DD HH:mm:ss dddd'))
-
-/** 时钟定时器句柄 */
-let clockTimer: number | undefined
-
-/* ================= 图表配置 ================= */
-
-/**
- * 构建诊断趋势渐变面积折线图（后端 diagnosis_trend 为 [{date, count}] 数组）。
- * @returns ECharts 配置
- */
-const trendOption = computed<EChartsOption>(() => {
-  const rows = trendPanel.data.value?.diagnosis_trend ?? []
-  return {
-    color: [palette[0]],
-    tooltip: { trigger: 'axis' },
-    grid: { left: 44, right: 20, top: 34, bottom: 30 },
-    xAxis: {
-      type: 'category',
-      data: rows.map((r) => r.date.slice(5)),
-      boundaryGap: false,
-      axisLine: { lineStyle: { color: 'rgba(126,180,235,0.3)' } },
-      axisLabel: { color: AXIS_TEXT },
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { color: AXIS_TEXT },
-      splitLine: { lineStyle: { color: SPLIT_LINE } },
-    },
-    series: [
-      {
-        name: '诊断次数',
-        type: 'line',
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        lineStyle: { width: 2 },
-        areaStyle: { color: 'rgba(78, 166, 255, 0.22)' },
-        data: rows.map((r) => r.count),
-      },
-    ],
-  }
-})
-
-/**
- * 构建病虫害类型分布环形图（图例右置）。
- * @returns ECharts 配置
- */
-const pieOption = computed<EChartsOption>(() => ({
-  color: [...palette],
-  tooltip: { trigger: 'item' },
-  legend: {
-    orient: 'vertical',
-    right: 8,
-    top: 'middle',
-    icon: 'circle',
-    itemWidth: 8,
-    textStyle: { color: '#a9cbe8', fontSize: 12 },
+/** 首次拿到地块列表后初始化默认选中（优先路由参数，其次第一个大棚，再次第一个地块） */
+let plotInitialized = false
+watch(
+  plotOptions,
+  (opts) => {
+    if (plotInitialized || opts.length === 0) return
+    plotInitialized = true
+    const fromQuery = Number(route.query.plot ?? 0)
+    const matched = opts.find((o) => o.id === fromQuery)
+    if (matched) {
+      plotId.value = matched.id
+    } else {
+      const fallback = opts.find((o) => o.type === 'greenhouse') ?? opts[0]
+      plotId.value = fallback?.id ?? null
+    }
   },
-  series: [
-    {
-      name: '病虫害类型',
-      type: 'pie',
-      radius: ['48%', '72%'],
-      center: ['36%', '50%'],
-      itemStyle: { borderColor: '#0a1a2f', borderWidth: 2 },
-      label: { show: false },
-      data:
-        piePanel.data.value?.disease_distribution.map((d) => ({ name: d.disease_name, value: d.count })) ?? [],
-    },
-  ],
-}))
+  { immediate: true },
+)
 
-/**
- * 构建地块虫情密度与墒情组合图（柱 + 双轴折线）。
- * @returns ECharts 配置
- */
-const densityOption = computed<EChartsOption>(() => {
-  const rows = densityPanel.data.value?.plot_pest_density ?? []
+/** 地块切换 → 同步路由 + 重载设备 */
+watch(plotId, (id) => {
+  if (id !== null) {
+    void router.replace({ query: { ...route.query, plot: String(id), view: view3d.value ? '3d' : '2d' } })
+  }
+  void loadDevices()
+})
+
+/* ================= 面板数据推导 ================= */
+
+/** 当前地块信息 */
+const currentPlot = computed(() => plotOptions.value.find((o) => o.id === plotId.value) ?? null)
+
+/** 当前地块是否大棚 */
+const isGreenhouse = computed(() => currentPlot.value?.type === 'greenhouse')
+
+/** 孪生场景标签数据 */
+const twinData = computed(() => {
+  const env = stats.data.value?.env_realtime.find((r) => r.plot_id === plotId.value)
+  const density = stats.data.value?.plot_pest_density.find((d) => d.plot_id === plotId.value)
+  const alerts = (stats.data.value?.recent_alerts ?? []).filter(
+    (a) => a.plot_id === plotId.value && a.status === 'active',
+  )
   return {
-    color: [palette[3], palette[1]],
-    tooltip: { trigger: 'axis' },
-    legend: { top: 0, textStyle: { color: '#a9cbe8' } },
-    grid: { left: 44, right: 44, top: 36, bottom: 30 },
-    xAxis: {
-      type: 'category',
-      data: rows.map((r) => r.plot_name),
-      axisLine: { lineStyle: { color: 'rgba(126,180,235,0.3)' } },
-      axisLabel: { color: AXIS_TEXT },
-    },
-    yAxis: [
-      {
-        type: 'value',
-        name: '虫情密度',
-        nameTextStyle: { color: AXIS_TEXT },
-        axisLabel: { color: AXIS_TEXT },
-        splitLine: { lineStyle: { color: SPLIT_LINE } },
-      },
-      {
-        type: 'value',
-        name: '墒情',
-        nameTextStyle: { color: AXIS_TEXT },
-        axisLabel: { color: AXIS_TEXT },
-        splitLine: { show: false },
-      },
-    ],
-    series: [
-      {
-        name: '虫情预警',
-        type: 'bar',
-        barWidth: 18,
-        itemStyle: { borderRadius: [4, 4, 0, 0] },
-        data: rows.map((r) => r.pest_alert_count),
-      },
-      {
-        name: '土壤墒情',
-        type: 'line',
-        yAxisIndex: 1,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        lineStyle: { width: 2 },
-        data: rows.map((r) => r.soil_moisture),
-      },
-    ],
+    name: env?.plot_name ?? '数字孪生场景',
+    tempText: env?.temp === null || env?.temp === undefined ? undefined : `${env.temp}℃`,
+    humText: env?.humidity === null || env?.humidity === undefined ? undefined : `${env.humidity}%`,
+    soilMoisture: density?.soil_moisture ?? null,
+    pestAlertCount: density?.pest_alert_count ?? 0,
+    alertTitles: alerts.slice(0, 3).map((a) => a.title),
   }
 })
 
-/* ================= 环境实况 / 设备指标 ================= */
-
-/** 环境实况行 */
-const envRows = computed(() => envPanel.data.value?.env_realtime ?? [])
-
-/**
- * 环境值格式化（null 显示 '-'）。
- * @param value 数值
- * @param unit 单位
- * @returns 展示文本
- */
-function envText(value: number | null | undefined, unit: string): string {
-  return value === null || value === undefined ? '-' : `${value}${unit}`
-}
-
-/** 设备健康数据 */
-const deviceHealth = computed(() => devicePanel.data.value?.device_health)
-
-/** 设备与预警指标翻牌卡 */
-const kpiCards = computed(() => {
-  const health = deviceHealth.value
+/** 环境实时数据行 */
+const envItems = computed(() => {
+  const d = twinData.value
   return [
-    { label: '总设备', value: health?.total ?? 0, tone: 'cyan' },
-    { label: '在线', value: health?.online ?? 0, tone: 'green' },
-    { label: '离线', value: health?.offline ?? 0, tone: 'red' },
-    { label: '活跃预警', value: alertRows.value.length, tone: 'amber' },
+    { label: '空气温度', value: d.tempText ?? '--', state: '适宜' },
+    { label: '空气湿度', value: d.humText ?? '--', state: '适宜' },
+    {
+      label: isGreenhouse.value ? '基质含水率' : '土壤墒情',
+      value: d.soilMoisture === null || d.soilMoisture === undefined ? '--' : `${d.soilMoisture} %`,
+      state: '适宜',
+    },
+    {
+      label: '活跃预警',
+      value: `${d.pestAlertCount} 项`,
+      state: d.pestAlertCount > 0 ? '告警' : '适宜',
+    },
   ]
 })
 
-/* ================= 中央主视觉热点 ================= */
+/** 群体健康预警标题 */
+const alertTitles = computed(() => twinData.value.alertTitles)
 
-/** 热点状态 */
-type HotspotState = 'ok' | 'warn' | 'alert'
+/** 设备健康统计 */
+const deviceHealth = computed(() => stats.data.value?.device_health)
 
-/** 单个热点 */
-interface Hotspot {
-  /** 地块名 */
-  plotName: string
-  /** 温度文本 */
-  tempText: string
-  /** 湿度文本 */
-  humText: string
-  /** 状态 */
-  state: HotspotState
-  /** 关联预警标题（无则空） */
-  alertTitle: string
-  /** 横向位置（%） */
-  x: number
-  /** 纵向位置（%） */
-  y: number
+/** 设备类型中文映射 */
+const DEVICE_TYPE_LABEL: Record<string, string> = {
+  camera: '监控摄像头',
+  pest_light: '虫情测报灯',
+  spore_trap: '孢子捕捉仪',
+  env_sensor: '环境传感器',
 }
-
-/** 预置热点坐标（按地块顺序轮转，落在插画的大棚/田垄区域） */
-const HOTSPOT_POS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 16, y: 62 },
-  { x: 47, y: 55 },
-  { x: 80, y: 66 },
-  { x: 32, y: 76 },
-  { x: 63, y: 78 },
-  { x: 12, y: 48 },
-]
 
 /**
- * 取第 i 个预置坐标（越界时轮转并兜底）。
- * @param i 序号
- * @returns 百分比坐标
+ * 设备展示名（无名称时回退类型标签）。
+ * @param d 设备
+ * @returns 展示名
  */
-function hotspotPos(i: number): { x: number; y: number } {
-  return HOTSPOT_POS[i % HOTSPOT_POS.length] ?? { x: 50, y: 50 }
+function deviceName(d: Device): string {
+  return d.name || DEVICE_TYPE_LABEL[d.type] || '监测设备'
 }
 
-/** 主视觉热点列表（环境实况 × 活跃预警叠加） */
-const hotspots = computed<Hotspot[]>(() => {
-  const rows = envRows.value
-  const alerts = alertRows.value
-  return rows.map((row, idx) => {
-    const plotAlerts = alerts.filter(
-      (a) => a.plot_id === row.plot_id || (a.plot_name !== undefined && a.plot_name === row.plot_name),
-    )
-    const critical = plotAlerts.some((a) => a.level === 'critical')
-    const state: HotspotState = critical ? 'alert' : plotAlerts.length > 0 ? 'warn' : 'ok'
-    const pos = hotspotPos(idx)
-    return {
-      plotName: row.plot_name,
-      tempText: envText(row.temp, '℃'),
-      humText: envText(row.humidity, '%'),
-      state,
-      alertTitle: plotAlerts[0]?.title ?? '',
-      x: pos.x,
-      y: pos.y,
-    }
-  })
+/** 设备卡展示行（最多 6 个） */
+const deviceCards = computed(() =>
+  devices.value.slice(0, 6).map((d) => ({
+    id: d.id,
+    name: deviceName(d),
+    no: d.device_no,
+    online: d.status === 'online',
+  })),
+)
+
+/* ================= 场景交互 ================= */
+
+/** 巡检状态（自主环绕开关） */
+const patrolling = ref(false)
+
+/** 时间轴（0-24 小时） */
+const hour = ref(9.5)
+
+/** 时间显示文本（HH:mm） */
+const hourText = computed(() => {
+  const h = Math.floor(hour.value)
+  const m = Math.round((hour.value - h) * 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 })
 
-/* ================= 预警跑马灯 ================= */
+/** 时间轴拖动 → 引擎光照联动 */
+watch(hour, (h) => handle.setTimeOfDay(h))
 
-/** 预警流行 */
-const alertRows = computed(() => alertPanel.data.value?.recent_alerts ?? [])
+/** 巡检开关 → 相机自动环绕 */
+watch(patrolling, (on) => handle.setAutoRotate(on))
 
-/** 跑马灯滚动行（两份拼接实现无缝循环） */
-const marqueeRows = computed(() => [...alertRows.value, ...alertRows.value])
+/** 数据刷新 → 场景标签重绘 */
+watch(
+  twinData,
+  (d) => {
+    handle.setData(d)
+  },
+  { deep: true },
+)
+
+/** 地块类型变化 → 切换大棚/露天地块建模（init 完成后才生效） */
+watch(
+  isGreenhouse,
+  (gh) => {
+    handle.setScene(gh ? 'greenhouse' : 'open_field')
+  },
+)
 
 /**
- * 跑马灯单轮时长（按条数伸缩，保证可读速度）。
- * @returns CSS animation-duration 文本
+ * 切换 3D/经典视图并同步路由参数。
+ * @param to3d 是否切到 3D 孪生视图
  */
-const marqueeDuration = computed(() => `${Math.max(alertRows.value.length * 5, 12)}s`)
-
-/* ================= 生命周期 ================= */
+function switchView(to3d: boolean): void {
+  view3d.value = to3d
+  void router.replace({ query: { ...route.query, view: to3d ? '3d' : '2d' } })
+}
 
 onMounted(() => {
-  updateScale()
-  window.addEventListener('resize', updateScale)
-  // 每秒更新时钟
-  clockTimer = window.setInterval(() => {
-    clockText.value = dayjs().format('YYYY-MM-DD HH:mm:ss dddd')
-  }, 1000)
-  // 60 秒定时刷新全部面板
+  void stats.load()
+  // 60 秒定时刷新聚合数据
   refreshTimer = window.setInterval(() => {
-    for (const panel of allPanels) {
-      if (!panel.loading.value) void panel.load()
-    }
+    if (!stats.loading.value) void stats.load()
   }, 60000)
+
+  // 3D 视图初始化场景
+  if (view3d.value) {
+    initScene()
+  }
+})
+
+/**
+ * 初始化 3D 场景（失败则回退经典视图）。
+ */
+function initScene(): void {
+  const canvas = canvasRef.value
+  const container = containerRef.value
+  if (!canvas || !container) return
+  const ok = handle.init(canvas, container)
+  if (!ok) {
+    sceneFailed.value = true
+    view3d.value = false
+    return
+  }
+  handle.setTimeOfDay(hour.value)
+  handle.setData(twinData.value)
+  /* 初始主体按当前地块类型（默认建的是大棚，露天则换） */
+  if (isGreenhouse.value === false) {
+    handle.setScene('open_field')
+  }
+}
+
+/** 视图切换联动：切回 3D 重新初始化场景，切到经典视图暂停渲染并释放资源 */
+watch(view3d, (to3d) => {
+  if (to3d && !sceneFailed.value) {
+    void Promise.resolve().then(() => initScene())
+  } else if (!to3d) {
+    handle.stop()
+  }
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', updateScale)
-  if (clockTimer !== undefined) window.clearInterval(clockTimer)
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer)
+  handle.dispose()
 })
 </script>
 
 <template>
-  <div ref="viewport" class="bigscreen-viewport">
-    <div class="bigscreen" :style="{ transform: `translate(-50%, -50%) scale(${scaleXY.x}, ${scaleXY.y})` }">
-      <!-- 顶栏 -->
+  <div class="twin-root">
+    <!-- 3D 孪生视图 -->
+    <div v-if="view3d && !sceneFailed" ref="containerRef" class="twin-page">
+      <canvas ref="canvasRef" class="twin-canvas" />
+
+      <!-- 顶栏：标题 + 地块切换 + 视图切换 -->
       <header class="top-bar">
-        <div class="top-side left">DATA · 60s 自动刷新</div>
-        <div class="top-title">
-          <span class="title-line" />
-          <h1>农场智能管护 · 监测大屏</h1>
-          <span class="title-line right" />
+        <div class="title-block">
+          <h1>{{ isGreenhouse ? '3D 大棚' : '3D 地块' }}</h1>
+          <div class="title-sub">{{ twinData.name }} · 数字孪生场景</div>
         </div>
-        <div class="top-side right">{{ clockText }}</div>
+        <div class="top-actions">
+          <div class="source-switch">
+            <span class="sw-label">数据源切换</span>
+            <el-select
+              v-model="plotId"
+              size="small"
+              placeholder="选择地块"
+              class="sw-select"
+              :teleported="false"
+            >
+              <el-option
+                v-for="o in plotOptions"
+                :key="o.id"
+                :value="o.id"
+                :label="`${o.name}（${o.type === 'greenhouse' ? '大棚' : '露天'}）`"
+              />
+            </el-select>
+          </div>
+          <button class="ghost-btn" type="button" @click="switchView(false)">经典视图</button>
+        </div>
       </header>
 
-      <!-- 主体三段式 -->
-      <div class="layout">
-        <!-- 左列 -->
-        <div class="col">
-          <TechPanel title="环境实况" class="h-env">
-            <StateWrap :loading="envPanel.loading.value" :failed="envPanel.failed.value" :rows="4" @retry="envPanel.load()">
-              <div v-if="envRows.length > 0" class="env-grid">
-                <div v-for="row in envRows" :key="row.plot_id" class="env-card">
-                  <div class="env-name">
-                    {{ row.plot_name }}
-                    <span class="env-type">{{ row.type === 'greenhouse' ? '大棚' : '露天' }}</span>
-                  </div>
-                  <div class="env-val">
-                    <span class="label">温度</span>
-                    <span class="num">{{ envText(row.temp, '℃') }}</span>
-                  </div>
-                  <div class="env-val">
-                    <span class="label">湿度</span>
-                    <span class="num">{{ envText(row.humidity, '%') }}</span>
-                  </div>
-                </div>
-              </div>
-              <el-empty v-else description="暂无数据" :image-size="50" />
-            </StateWrap>
-          </TechPanel>
-
-          <TechPanel title="地块虫情密度与墒情" class="h-fill">
-            <StateWrap :loading="densityPanel.loading.value" :failed="densityPanel.failed.value" :rows="4" @retry="densityPanel.load()">
-              <EChart v-if="densityPanel.data.value" :option="densityOption" height="100%" class="chart-fill" />
-              <el-empty v-else description="暂无数据" :image-size="50" />
-            </StateWrap>
-          </TechPanel>
+      <!-- 左侧：环境调控中枢 -->
+      <aside class="panel left">
+        <div class="p-title">
+          <span class="p-tick" />
+          <div>
+            <div class="p-main">{{ isGreenhouse ? '智慧大棚' : '智慧地块' }} · 环境调控中枢</div>
+            <div class="p-sub">{{ twinData.name }} · 数字孪生场景</div>
+          </div>
         </div>
 
-        <!-- 中央列 -->
-        <div class="col center">
-          <TechPanel title="园区监测总览" class="h-fill">
-            <div class="stage">
-              <!-- 2.5D 园区插画底图 -->
-              <svg class="stage-bg" viewBox="0 0 800 340" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-                <rect x="0" y="0" width="800" height="340" fill="#12283f" />
-                <path d="M0 120 Q140 70 300 108 T800 96 L800 0 L0 0 Z" fill="#16324e" />
-                <path d="M0 150 Q200 112 420 140 T800 132 L800 340 L0 340 Z" fill="#17324a" />
-                <rect x="0" y="176" width="800" height="164" fill="#1c3a2f" />
-                <!-- 露天田垄 -->
-                <g stroke="#26513c" stroke-width="6" opacity="0.85">
-                  <line x1="560" y1="216" x2="790" y2="204" />
-                  <line x1="560" y1="240" x2="790" y2="228" />
-                  <line x1="560" y1="264" x2="790" y2="252" />
-                  <line x1="560" y1="288" x2="790" y2="276" />
-                  <line x1="560" y1="312" x2="790" y2="300" />
-                </g>
-                <!-- 大棚 1 -->
-                <g>
-                  <polygon points="60,236 150,196 240,236 240,296 60,296" fill="#0f2c44" />
-                  <polygon points="60,236 150,196 240,236" fill="rgba(78,166,255,0.35)" />
-                  <line x1="150" y1="196" x2="150" y2="296" stroke="rgba(78,166,255,0.4)" stroke-width="1.5" />
-                  <line x1="105" y1="216" x2="105" y2="296" stroke="rgba(78,166,255,0.25)" stroke-width="1" />
-                  <line x1="195" y1="216" x2="195" y2="296" stroke="rgba(78,166,255,0.25)" stroke-width="1" />
-                </g>
-                <!-- 大棚 2 -->
-                <g>
-                  <polygon points="270,226 380,178 490,226 490,298 270,298" fill="#0f2c44" />
-                  <polygon points="270,226 380,178 490,226" fill="rgba(78,166,255,0.35)" />
-                  <line x1="380" y1="178" x2="380" y2="298" stroke="rgba(78,166,255,0.4)" stroke-width="1.5" />
-                  <line x1="325" y1="202" x2="325" y2="298" stroke="rgba(78,166,255,0.25)" stroke-width="1" />
-                  <line x1="435" y1="202" x2="435" y2="298" stroke="rgba(78,166,255,0.25)" stroke-width="1" />
-                </g>
-                <!-- 大棚 3 -->
-                <g>
-                  <polygon points="520,244 610,204 700,244 700,300 520,300" fill="#0f2c44" />
-                  <polygon points="520,244 610,204 700,244" fill="rgba(78,166,255,0.35)" />
-                  <line x1="610" y1="204" x2="610" y2="300" stroke="rgba(78,166,255,0.4)" stroke-width="1.5" />
-                  <line x1="565" y1="224" x2="565" y2="300" stroke="rgba(78,166,255,0.25)" stroke-width="1" />
-                  <line x1="655" y1="224" x2="655" y2="300" stroke="rgba(78,166,255,0.25)" stroke-width="1" />
-                </g>
-                <!-- 道路 -->
-                <path d="M0 316 L800 300 L800 322 L0 340 Z" fill="#122438" />
-              </svg>
+        <div class="sec-title">环境实时数据</div>
+        <div class="env-list">
+          <div v-for="item in envItems" :key="item.label" class="env-row">
+            <span class="env-label">{{ item.label }}</span>
+            <span class="env-value">{{ item.value }}</span>
+            <span class="env-state" :class="{ alert: item.state === '告警' }">{{ item.state }}</span>
+          </div>
+        </div>
 
-              <!-- 数据热点标注 -->
-              <div
-                v-for="(spot, idx) in hotspots"
-                :key="idx"
-                class="hotspot"
-                :class="spot.state"
-                :style="{ left: `${spot.x}%`, top: `${spot.y}%` }"
-              >
-                <span class="hs-dot" />
-                <div class="hs-card">
-                  <div class="hs-name">{{ spot.plotName }}</div>
-                  <div class="hs-vals">
-                    <span>{{ spot.tempText }}</span>
-                    <span>{{ spot.humText }}</span>
-                  </div>
-                  <div v-if="spot.alertTitle" class="hs-alert">{{ spot.alertTitle }}</div>
-                </div>
-              </div>
-
-              <!-- 图例 -->
-              <div class="stage-legend">
-                <span class="lg-item"><i class="lg-dot ok" />正常</span>
-                <span class="lg-item"><i class="lg-dot warn" />预警</span>
-                <span class="lg-item"><i class="lg-dot alert" />严重</span>
-              </div>
-            </div>
-          </TechPanel>
-
-          <!-- 设备与预警指标翻牌 -->
-          <div class="kpi-row">
-            <div v-for="card in kpiCards" :key="card.label" class="kpi-card" :class="card.tone">
-              <div class="kpi-value">{{ card.value }}</div>
-              <div class="kpi-label">{{ card.label }}</div>
+        <div class="sec-title">设备监控（本地块）</div>
+        <div v-if="devicesLoading" class="dev-empty">设备加载中…</div>
+        <div v-else-if="devicesFailed" class="dev-empty dev-error">设备加载失败</div>
+        <div v-else-if="deviceCards.length === 0" class="dev-empty">本地块暂无接入设备</div>
+        <div v-else class="dev-grid">
+          <div v-for="d in deviceCards" :key="d.id" class="dev-card">
+            <div class="dev-name">{{ d.name }}</div>
+            <div class="dev-state">
+              <i class="dot" :class="d.online ? 'on' : 'off'" />{{ d.no }} · {{ d.online ? '在线' : '离线' }}
             </div>
           </div>
-
-          <!-- 实时预警跑马灯 -->
-          <TechPanel title="实时预警流" class="h-marquee">
-            <StateWrap :loading="alertPanel.loading.value" :failed="alertPanel.failed.value" :rows="2" @retry="alertPanel.load()">
-              <div v-if="alertRows.length > 0" class="marquee">
-                <div class="marquee-track" :style="{ animationDuration: marqueeDuration }">
-                  <div v-for="(a, i) in marqueeRows" :key="`${a.id}-${i}`" class="marquee-item">
-                    <span class="m-dot" :class="a.level" />
-                    <span class="m-title">{{ a.title }}</span>
-                    <span class="m-time">{{ formatDateTime(a.first_triggered_at) }}</span>
-                  </div>
-                </div>
-              </div>
-              <div v-else class="marquee-empty">当前无活跃预警</div>
-            </StateWrap>
-          </TechPanel>
         </div>
 
-        <!-- 右列 -->
-        <div class="col">
-          <TechPanel title="诊断趋势（近 14 天）" class="h-env">
-            <StateWrap :loading="trendPanel.loading.value" :failed="trendPanel.failed.value" :rows="4" @retry="trendPanel.load()">
-              <EChart v-if="trendPanel.data.value" :option="trendOption" height="100%" class="chart-fill" />
-              <el-empty v-else description="暂无数据" :image-size="50" />
-            </StateWrap>
-          </TechPanel>
-
-          <TechPanel title="病虫害类型分布" class="h-fill">
-            <StateWrap :loading="piePanel.loading.value" :failed="piePanel.failed.value" :rows="4" @retry="piePanel.load()">
-              <EChart v-if="piePanel.data.value" :option="pieOption" height="100%" class="chart-fill" />
-              <el-empty v-else description="暂无数据" :image-size="50" />
-            </StateWrap>
-          </TechPanel>
+        <div class="sec-title">时间轴（昼夜光照联动）</div>
+        <div class="time-row">
+          <el-slider v-model="hour" :min="0" :max="24" :step="0.25" />
+          <span class="time-text">{{ hourText }}</span>
         </div>
-      </div>
+
+        <div class="sec-title">群体健康总览</div>
+        <div class="health-card">
+          <div class="health-line">本地块病虫害活跃预警 {{ alertTitles.length }} 组</div>
+          <div v-for="t in alertTitles" :key="t" class="health-alert">{{ t }}</div>
+          <div v-if="alertTitles.length === 0" class="health-ok">当前无活跃预警，植株状态良好</div>
+        </div>
+      </aside>
+
+      <!-- 右侧：巡检 Agent + 设备健康 -->
+      <aside class="panel right">
+        <div class="p-title">
+          <span class="p-tick" />
+          <div>
+            <div class="p-main">巡检 Agent</div>
+            <div class="p-sub">{{ patrolling ? '自主巡检中' : '待命中' }}</div>
+          </div>
+        </div>
+        <div class="agent-status">
+          {{ patrolling ? '相机正自动环绕孪生主体巡检，拖拽画面可随时接管。' : '当前未开始任务，点击下方按钮可下发自主巡检指令。' }}
+        </div>
+        <button class="agent-btn" :class="{ active: patrolling }" type="button" @click="patrolling = !patrolling">
+          {{ patrolling ? '停止巡检' : '自主巡检' }}
+        </button>
+
+        <div class="sec-title">设备健康（全场）</div>
+        <div class="kpi-mini">
+          <div class="kpi-item">
+            <div class="kpi-num cyan">{{ deviceHealth?.total ?? '--' }}</div>
+            <div class="kpi-cap">总数</div>
+          </div>
+          <div class="kpi-item">
+            <div class="kpi-num green">{{ deviceHealth?.online ?? '--' }}</div>
+            <div class="kpi-cap">在线</div>
+          </div>
+          <div class="kpi-item">
+            <div class="kpi-num red">{{ deviceHealth?.offline ?? '--' }}</div>
+            <div class="kpi-cap">离线</div>
+          </div>
+        </div>
+        <div class="agent-hint">数据 60s 自动刷新 · 来源于农场监测平台</div>
+      </aside>
+
+      <!-- 操作提示 -->
+      <div class="hint-bar">左键旋转 · 右键平移 · 滚轮缩放 · 时间轴联动昼夜光照</div>
     </div>
+
+    <!-- 经典视图 / WebGL 回退 -->
+    <ClassicDashboard v-else @back-3d="switchView(true)" />
   </div>
 </template>
 
 <style scoped>
-/* ===== 视口与等比缩放画布 ===== */
-.bigscreen-viewport {
+.twin-root {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 0;
   overflow: hidden;
-  background: #060f1c;
 }
 
-.bigscreen {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 1920px;
-  height: 1080px;
-  padding: 14px 18px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background:
-    radial-gradient(ellipse at 50% -10%, rgba(30, 82, 138, 0.5) 0%, rgba(8, 22, 40, 0) 55%),
-    radial-gradient(ellipse at bottom, #0c2036 0%, #081526 60%, #060f1c 100%);
-  transform-origin: center center;
+/* ===== 3D 孪生页 ===== */
+.twin-page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a1428;
+  font-family: 'Microsoft YaHei', sans-serif;
+}
+
+.twin-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.twin-canvas:active {
+  cursor: grabbing;
 }
 
 /* ===== 顶栏 ===== */
 .top-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 6;
   display: flex;
-  align-items: center;
-  height: 52px;
-  flex: none;
-}
-
-.top-title {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  justify-content: center;
-}
-
-.top-title h1 {
-  margin: 0;
-  color: #e6f3ff;
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: 6px;
-  text-shadow: 0 0 18px rgba(78, 166, 255, 0.55);
-  white-space: nowrap;
-}
-
-.title-line {
-  width: 240px;
-  height: 8px;
-  background:
-    linear-gradient(90deg, rgba(53, 208, 186, 0) 0%, #35d0ba 60%, rgba(53, 208, 186, 0) 100%);
-  clip-path: polygon(0 40%, 100% 0, 100% 100%, 0 60%);
-}
-
-.title-line.right {
-  transform: scaleX(-1);
-}
-
-.top-side {
-  width: 280px;
-  color: #6d95bd;
-  font-size: 15px;
-  letter-spacing: 1px;
-}
-
-.top-side.right {
-  text-align: right;
-  color: #9fc4e8;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ===== 三段式布局 ===== */
-.layout {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 440px 1fr 440px;
-  gap: 14px;
-}
-
-/* 面板内三态包装统一撑满，保证 EChart height:100% 有参照 */
-.bigscreen :deep(.state-wrap) {
-  height: 100%;
-}
-
-.h-env :deep(.state-wrap),
-.h-marquee :deep(.state-wrap) {
-  display: flex;
-  flex-direction: column;
-}
-
-.col {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 0;
-  min-width: 0;
-}
-
-.h-env {
-  flex: none;
-  height: 420px;
-}
-
-.h-fill {
-  flex: 1;
-  min-height: 0;
-}
-
-.h-marquee {
-  flex: none;
-  height: 150px;
-}
-
-.chart-fill {
-  flex: 1;
-  min-height: 0;
-}
-
-/* ===== 环境实况 KPI ===== */
-.env-grid {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: 1fr;
-  gap: 12px;
-}
-
-.env-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  background: rgba(78, 166, 255, 0.07);
-  border: 1px solid rgba(78, 166, 255, 0.15);
-  border-radius: 8px;
-  padding: 12px 14px;
-}
-
-.env-name {
-  color: #d7ecff;
-  font-size: 15px;
-  margin-bottom: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.env-type {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 0 6px;
-  border: 1px solid rgba(53, 208, 186, 0.5);
-  border-radius: 3px;
-  color: #35d0ba;
-  font-size: 11px;
-  line-height: 16px;
-  vertical-align: 1px;
-}
-
-.env-val {
-  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: baseline;
-  padding: 2px 0;
+  padding: 12px 16px 0;
+  pointer-events: none;
 }
 
-.env-val .label {
-  color: #6d95bd;
-  font-size: 13px;
+.top-bar > * {
+  pointer-events: auto;
 }
 
-.env-val .num {
-  color: #35d0ba;
-  font-size: 19px;
+.title-block h1 {
+  margin: 0;
+  font-size: 22px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ===== 中央主视觉 ===== */
-.stage {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  border: 1px solid rgba(78, 166, 255, 0.18);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.stage-bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.hotspot {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  z-index: 3;
-}
-
-.hs-dot {
-  display: block;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.85);
-  animation: hs-pulse 2s ease-out infinite;
-}
-
-.hotspot.ok .hs-dot {
-  background: #35d0ba;
-}
-
-.hotspot.warn .hs-dot {
-  background: #fac775;
-}
-
-.hotspot.alert .hs-dot {
-  background: #f0655f;
-}
-
-@keyframes hs-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.45);
-  }
-  70% {
-    box-shadow: 0 0 0 12px rgba(255, 255, 255, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
-  }
-}
-
-.hs-card {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 150px;
-  background: rgba(8, 24, 42, 0.88);
-  border: 1px solid rgba(78, 166, 255, 0.35);
-  border-radius: 5px;
-  padding: 8px 10px;
-}
-
-.hotspot.warn .hs-card {
-  border-color: rgba(250, 199, 117, 0.55);
-}
-
-.hotspot.alert .hs-card {
-  border-color: rgba(240, 101, 95, 0.65);
-}
-
-.hs-name {
-  color: #d7ecff;
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.hs-vals {
-  display: flex;
-  gap: 12px;
-  color: #35d0ba;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.hs-alert {
-  margin-top: 4px;
-  color: #f0958f;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 190px;
-}
-
-.stage-legend {
-  position: absolute;
-  right: 10px;
-  bottom: 8px;
-  display: flex;
-  gap: 14px;
-  padding: 4px 10px;
-  background: rgba(8, 24, 42, 0.7);
-  border-radius: 4px;
-  z-index: 3;
-}
-
-.lg-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: #a9cbe8;
-  font-size: 13px;
-}
-
-.lg-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.lg-dot.ok {
-  background: #35d0ba;
-}
-
-.lg-dot.warn {
-  background: #fac775;
-}
-
-.lg-dot.alert {
-  background: #f0655f;
-}
-
-/* ===== 设备指标翻牌 ===== */
-.kpi-row {
-  flex: none;
-  height: 112px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-.kpi-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  background:
-    linear-gradient(180deg, rgba(20, 48, 82, 0.6) 0%, rgba(10, 26, 47, 0.9) 100%);
-  border: 1px solid rgba(78, 166, 255, 0.22);
-  border-radius: 8px;
-}
-
-.kpi-value {
-  font-size: 40px;
-  font-weight: 600;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.kpi-label {
-  color: #6d95bd;
-  font-size: 14px;
+  color: #eafff8;
   letter-spacing: 2px;
+  text-shadow: 0 0 14px rgba(53, 208, 186, 0.45);
 }
 
-.kpi-card.cyan .kpi-value {
-  color: #4ea6ff;
+.title-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #8fb5a8;
 }
 
-.kpi-card.green .kpi-value {
-  color: #35d0ba;
-}
-
-.kpi-card.red .kpi-value {
-  color: #f0655f;
-}
-
-.kpi-card.amber .kpi-value {
-  color: #fac775;
-}
-
-/* ===== 预警跑马灯 ===== */
-.marquee {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-
-.marquee-track {
-  display: flex;
-  width: max-content;
-  animation: marquee-scroll linear infinite;
-}
-
-.marquee-item {
+.top-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-right: 56px;
+}
+
+.source-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: rgba(8, 20, 18, 0.82);
+  border: 1px solid rgba(53, 208, 186, 0.35);
+  border-radius: 6px;
+}
+
+.sw-label {
+  font-size: 12px;
+  color: #8fb5a8;
   white-space: nowrap;
 }
 
-.m-dot {
-  width: 8px;
-  height: 8px;
+.sw-select {
+  width: 190px;
+}
+
+.sw-select :deep(.el-input__wrapper) {
+  background: rgba(53, 208, 186, 0.08);
+  box-shadow: 0 0 0 1px rgba(53, 208, 186, 0.35) inset;
+}
+
+.sw-select :deep(.el-input__inner) {
+  color: #d7ece4;
+}
+
+.ghost-btn {
+  padding: 6px 14px;
+  background: rgba(8, 20, 18, 0.82);
+  border: 1px solid rgba(53, 208, 186, 0.45);
+  border-radius: 6px;
+  color: #7fe8d8;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ghost-btn:hover {
+  color: #fff;
+  border-color: rgba(53, 208, 186, 0.8);
+}
+
+/* ===== 悬浮玻璃面板 ===== */
+.panel {
+  position: absolute;
+  top: 76px;
+  z-index: 5;
+  width: 296px;
+  max-height: calc(100% - 120px);
+  overflow-y: auto;
+  background: rgba(8, 20, 18, 0.85);
+  border: 1px solid rgba(53, 208, 186, 0.3);
+  border-radius: 10px;
+  padding: 14px 16px;
+  backdrop-filter: blur(6px);
+  color: #d7ece4;
+}
+
+.panel.left {
+  left: 16px;
+}
+
+.panel.right {
+  right: 16px;
+  width: 252px;
+}
+
+.p-title {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.p-tick {
+  width: 4px;
+  align-self: stretch;
+  background: #35d0ba;
+  border-radius: 2px;
+  flex: none;
+}
+
+.p-main {
+  font-size: 15px;
+  font-weight: 600;
+  color: #eafff8;
+}
+
+.p-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #8fb5a8;
+}
+
+.sec-title {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #35d0ba;
+}
+
+.env-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.env-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(53, 208, 186, 0.06);
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.env-label {
+  color: #9fc4b5;
+  flex: 1;
+}
+
+.env-value {
+  color: #eafff8;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.env-state {
+  font-size: 11px;
+  color: #35d0ba;
+  border: 1px solid rgba(53, 208, 186, 0.45);
+  border-radius: 3px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+
+.env-state.alert {
+  color: #f0958f;
+  border-color: rgba(240, 101, 95, 0.55);
+}
+
+/* ===== 设备监控 ===== */
+.dev-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dev-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.dev-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #eafff8;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-state {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #8fb5a8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  color: #6d8f82;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.dev-error {
+  color: #f0958f;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex: none;
 }
 
-.m-dot.info {
-  background: #4ea6ff;
+.dot.on {
+  background: #35d0ba;
+  box-shadow: 0 0 5px rgba(53, 208, 186, 0.9);
 }
 
-.m-dot.warning {
-  background: #fac775;
+.dot.off {
+  background: #5a6f66;
 }
 
-.m-dot.critical {
-  background: #f0655f;
-  animation: hs-pulse 1.6s ease-out infinite;
-}
-
-.m-title {
-  color: #cfe3f5;
-  font-size: 15px;
-}
-
-.m-time {
-  color: #6d95bd;
-  font-size: 13px;
-}
-
-@keyframes marquee-scroll {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-.marquee-empty {
-  flex: 1;
+/* ===== 时间轴 ===== */
+.time-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: #6d95bd;
+  gap: 10px;
+}
+
+.time-row :deep(.el-slider__runway) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.time-text {
+  flex: none;
+  width: 46px;
+  text-align: right;
+  color: #35d0ba;
   font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 群体健康 ===== */
+.health-card {
+  background: rgba(53, 208, 186, 0.05);
+  border: 1px solid rgba(53, 208, 186, 0.18);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.health-line {
+  color: #9fc4b5;
+  margin-bottom: 4px;
+}
+
+.health-alert {
+  color: #f0958f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-ok {
+  color: #7fe8d8;
+}
+
+/* ===== 右侧 Agent ===== */
+.agent-status {
+  font-size: 12px;
+  color: #8fb5a8;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.agent-btn {
+  width: 100%;
+  padding: 8px 0;
+  background: rgba(53, 208, 186, 0.14);
+  border: 1px solid rgba(53, 208, 186, 0.55);
+  border-radius: 6px;
+  color: #7fe8d8;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agent-btn:hover {
+  background: rgba(53, 208, 186, 0.24);
+}
+
+.agent-btn.active {
+  background: rgba(240, 101, 95, 0.16);
+  border-color: rgba(240, 101, 95, 0.6);
+  color: #f0958f;
+}
+
+.kpi-mini {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.kpi-item {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 0;
+  text-align: center;
+}
+
+.kpi-num {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.kpi-num.cyan {
+  color: #4ea6ff;
+}
+
+.kpi-num.green {
+  color: #35d0ba;
+}
+
+.kpi-num.red {
+  color: #f0655f;
+}
+
+.kpi-cap {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #8fb5a8;
+}
+
+.agent-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #6d8f82;
+  line-height: 1.5;
+}
+
+/* ===== 底部操作提示 ===== */
+.hint-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 5px 16px;
+  background: rgba(8, 20, 18, 0.72);
+  border: 1px solid rgba(53, 208, 186, 0.25);
+  border-radius: 5px;
+  color: #8fb5a8;
+  font-size: 12px;
+  white-space: nowrap;
 }
 </style>

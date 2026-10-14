@@ -22,8 +22,13 @@ const auth = useAuthStore()
 /** 任务 ID（路由参数） */
 const taskId = Number(route.params.id)
 
-/** 任务详情异步状态 */
-const { loading, failed, data: task, load } = useAsyncData(() => getDiagnosisTask(taskId))
+/** 任务详情异步状态（errorMessage 用于区分「记录不存在」与网络异常，缺陷 D-11） */
+const { loading, failed, data: task, errorMessage: loadError, load } = useAsyncData(() => getDiagnosisTask(taskId))
+
+/** 失败态展示文案：记录不存在时给出明确提示 */
+const failedText = computed(() =>
+  loadError.value.includes('不存在') ? '诊断记录不存在或已删除' : '',
+)
 
 /** 轮询定时器句柄 */
 let pollTimer: number | undefined
@@ -211,7 +216,7 @@ onUnmounted(() => {
 
 <template>
   <div class="page">
-    <StateWrap :loading="loading" :failed="failed" :rows="8" @retry="load()">
+    <StateWrap :loading="loading" :failed="failed" :failed-text="failedText" :rows="8" @retry="load()">
       <template v-if="task">
         <!-- 识别中提示 -->
         <div v-if="task.status === 'pending' || task.status === 'running' || task.status === 'processing'" class="page-card recognizing">

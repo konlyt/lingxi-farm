@@ -18,18 +18,22 @@ export function useAsyncData<T>(loader: () => Promise<T>, immediate = true) {
   const failed = ref(false)
   /** 业务数据（未加载/失败时为 null） */
   const data: Ref<T | null> = ref(null)
+  /** 最近一次失败的信息（拦截器 reject 的 Error.message，供页面区分错误类型） */
+  const errorMessage = ref('')
 
   /**
    * 执行数据加载（可作重试入口）。
-   * 失败时不弹出全局提示（拦截器已处理），仅标记 failed。
+   * 失败时不弹出全局提示（拦截器已处理），仅标记 failed 并记录 errorMessage。
    */
   async function load(): Promise<void> {
     loading.value = true
     failed.value = false
+    errorMessage.value = ''
     try {
       data.value = await loader()
-    } catch {
+    } catch (error) {
       failed.value = true
+      errorMessage.value = error instanceof Error ? error.message : String(error)
     } finally {
       loading.value = false
     }
@@ -39,5 +43,5 @@ export function useAsyncData<T>(loader: () => Promise<T>, immediate = true) {
     void load()
   }
 
-  return { loading, failed, data, load }
+  return { loading, failed, data, errorMessage, load }
 }

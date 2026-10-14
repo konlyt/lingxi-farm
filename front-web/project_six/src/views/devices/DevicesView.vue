@@ -8,7 +8,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { createDevice, getDeviceDetail, getDeviceStats, getDevices, sendDeviceConfig } from '@/api/devices'
+import { createDevice, getDeviceDetail, getDeviceStats, getDevices, sendDeviceConfig, sendHeartbeat } from '@/api/devices'
 import { getPlots } from '@/api/plots'
 import { useAsyncData } from '@/composables/useAsyncData'
 import StateWrap from '@/components/StateWrap.vue'
@@ -37,6 +37,31 @@ const drawerDevice = ref<DeviceDetail | null>(null)
 const configText = ref('{"interval_minutes": 30}')
 /** 配置下发中 */
 const sendingConfig = ref(false)
+/** 心跳上报中（按设备 ID 记录，避免多行按钮互相干扰） */
+const heartbeatLoading = ref<number | null>(null)
+
+/**
+ * 上报设备心跳（模拟设备重新上线），成功后刷新详情/列表/统计。
+ * @param row 目标设备
+ */
+async function reportHeartbeat(row: Device): Promise<void> {
+  heartbeatLoading.value = row.id
+  try {
+    await sendHeartbeat(row.id)
+    ElMessage.success('心跳已上报，设备已恢复在线')
+    /* 抽屉开着且是同一台设备 → 同步刷新详情（心跳历史） */
+    if (drawerVisible.value && drawerDevice.value?.id === row.id) {
+      try {
+        drawerDevice.value = await getDeviceDetail(row.id)
+      } catch {
+        /* 详情刷新失败不影响主流程 */
+      }
+    }
+    await Promise.all([load(), loadStats()])
+  } finally {
+    heartbeatLoading.value = null
+  }
+}
 
 /** 新增向导 */
 const wizard = reactive({ visible: false, step: 0, testing: false })
@@ -306,9 +331,18 @@ onMounted(() => {
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="90" fixed="right">
+          <el-table-column label="操作" width="130" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" @click="openDrawer(row as Device)">详情</el-button>
+              <el-button
+                v-if="auth.isOwner && (row as Device).status !== 'online'"
+                link
+                type="success"
+                :loading="heartbeatLoading === (row as Device).id"
+                @click="reportHeartbeat(row as Device)"
+              >
+                心跳
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -334,6 +368,17 @@ onMounted(() => {
             <el-tag size="small" :type="deviceStatusTag(drawerDevice.status).type">
               {{ deviceStatusTag(drawerDevice.status).text }}
             </el-tag>
+            <el-button
+              v-if="auth.isOwner && drawerDevice.status !== 'online'"
+              size="small"
+              type="success"
+              plain
+              class="heartbeat-btn"
+              :loading="heartbeatLoading === drawerDevice.id"
+              @click="reportHeartbeat(drawerDevice)"
+            >
+              上报心跳 · 恢复在线
+            </el-button>
           </div>
           <h4 class="drawer-subtitle">采集计划</h4>
           <div class="info-line">{{ formatSchedule(drawerDevice.collect_schedule) }}</div>
@@ -497,6 +542,10 @@ onMounted(() => {
   color: #909399;
   display: inline-block;
   width: 70px;
+}
+
+.heartbeat-btn {
+  margin-left: 10px;
 }
 
 .heartbeat-timeline {

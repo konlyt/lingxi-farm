@@ -103,8 +103,8 @@ const rules: FormRules = {
   ],
   lng: [{ validator: makeRequiredForOpen, trigger: 'blur' }],
   lat: [{ validator: makeRequiredForOpen, trigger: 'blur' }],
-  crop_name: [{ validator: validateCropName, trigger: 'blur' }],
-  growth_stage: [{ validator: validateGrowthStage, trigger: 'blur' }],
+  crop_name: [{ required: true, validator: validateCropName, trigger: 'blur' }],
+  growth_stage: [{ required: true, validator: validateGrowthStage, trigger: 'blur' }],
 }
 
 /**

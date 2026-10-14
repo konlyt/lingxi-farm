@@ -99,10 +99,10 @@ onMounted(() => {
         <el-menu-item index="/environment">
           <el-icon><DataLine /></el-icon><span>大棚环境</span>
         </el-menu-item>
-        <el-menu-item index="/thresholds">
+        <el-menu-item v-if="auth.isOwner" index="/thresholds">
           <el-icon><Histogram /></el-icon><span>阈值配置</span>
         </el-menu-item>
-        <el-menu-item index="/devices">
+        <el-menu-item v-if="auth.isOwner" index="/devices">
           <el-icon><Cpu /></el-icon><span>设备管理</span>
         </el-menu-item>
         <el-menu-item index="/chat">
@@ -214,6 +214,10 @@ onMounted(() => {
 .app-menu {
   border-right: none;
   flex: 1;
+  /* flex 子项默认 min-height:auto 不收缩，低视口下菜单会溢出侧栏且不可滚动，
+     此处允许收缩并自身滚动，保证菜单项在任意窗口高度下均可达 */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .app-body {

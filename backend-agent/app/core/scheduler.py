@@ -142,10 +142,11 @@ def _harvest_restriction_release_job() -> None:
 
 
 def _mock_device_report_job() -> None:
-    """每 30 分钟任务：模拟番茄1号棚环境传感器上报（含日变化曲线）。
+    """每 30 分钟任务：模拟全部环境传感器上报（含日变化曲线）。
 
     数值生成规则与种子数据一致：温度正弦日变化（±7.5℃），湿度反相，
     墒情缓慢波动；走 report 逻辑以触发越限判定（演示 env 预警）。
+    遍历所有 env_sensor 设备（每台按设备 id 做小幅偏移，露天/大棚曲线错开）。
 
     Returns:
         None。
@@ -157,24 +158,32 @@ def _mock_device_report_job() -> None:
 
     session: DBSession = SessionLocal()
     try:
-        device = session.query(Device).filter(Device.device_no == "ENV-SENSOR-001").first()
-        if device is None:
+        devices = session.query(Device).filter(Device.type == "env_sensor", Device.plot_id.isnot(None)).all()
+        if not devices:
             return
         current = now()
         day_progress = (current.hour * 60 + current.minute) / 1440.0
-        temp_value = round(22.0 + 7.5 * math.sin(2 * math.pi * (day_progress - 0.29)), 1)
-        humidity_value = round(max(30.0, min(95.0, 66.0 - 11.0 * math.sin(2 * math.pi * (day_progress - 0.29)))), 1)
-        soil_value = round(max(30.0, min(85.0, 62.0 - 6.0 * math.sin(2 * math.pi * day_progress))), 1)
-        save_readings_and_check(
-            session,
-            device,
-            [
-                {"metric": "temp", "value": temp_value},
-                {"metric": "humidity", "value": humidity_value},
-                {"metric": "soil_moisture", "value": soil_value},
-            ],
-        )
-        logger.info("模拟设备上报完成: temp=%s humidity=%s soil=%s", temp_value, humidity_value, soil_value)
+        for device in devices:
+            """每台传感器按 id 做稳定偏移（-1.2 ~ +1.2℃ / ±5% 湿度），模拟不同小环境。"""
+            offset = ((device.id % 5) - 2) * 0.6
+            hum_offset = ((device.id % 4) - 1.5) * 3.0
+            temp_value = round(22.0 + 7.5 * math.sin(2 * math.pi * (day_progress - 0.29)) + offset, 1)
+            humidity_value = round(
+                max(30.0, min(95.0, 66.0 - 11.0 * math.sin(2 * math.pi * (day_progress - 0.29)) + hum_offset)), 1
+            )
+            soil_value = round(
+                max(30.0, min(85.0, 62.0 - 6.0 * math.sin(2 * math.pi * day_progress)) + offset * 2.0), 1
+            )
+            save_readings_and_check(
+                session,
+                device,
+                [
+                    {"metric": "temp", "value": temp_value},
+                    {"metric": "humidity", "value": humidity_value},
+                    {"metric": "soil_moisture", "value": soil_value},
+                ],
+            )
+        logger.info("模拟设备上报完成: %s 台环境传感器", len(devices))
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         logger.warning("模拟设备上报失败: %s", exc)

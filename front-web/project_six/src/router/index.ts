@@ -29,6 +29,12 @@ const router = createRouter({
       meta: { title: '登录', public: true },
     },
     {
+      path: '/greenhouse-twin',
+      name: 'greenhouse-twin',
+      component: () => import('@/views/greenhouse/GreenhouseTwinView.vue'),
+      meta: { title: '3D 大棚孪生', roles: ['owner'] },
+    },
+    {
       path: '/',
       component: () => import('@/layouts/MainLayout.vue'),
       children: [
@@ -103,13 +109,13 @@ const router = createRouter({
           path: 'thresholds',
           name: 'thresholds',
           component: () => import('@/views/environment/ThresholdsView.vue'),
-          meta: { title: '阈值配置' },
+          meta: { title: '阈值配置', roles: ['owner'] },
         },
         {
           path: 'devices',
           name: 'devices',
           component: () => import('@/views/devices/DevicesView.vue'),
-          meta: { title: '设备管理' },
+          meta: { title: '设备管理', roles: ['owner'] },
         },
         {
           path: 'chat',
@@ -144,8 +150,11 @@ const router = createRouter({
       ],
     },
     {
+      // 404 兜底：明确提示页面不存在，而非静默回退总览
       path: '/:pathMatch(.*)*',
-      redirect: '/dashboard',
+      name: 'not-found',
+      component: () => import('@/views/error/NotFoundView.vue'),
+      meta: { title: '页面不存在' },
     },
   ],
 })

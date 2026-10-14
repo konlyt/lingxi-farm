@@ -29,6 +29,7 @@ from app.models.advice import (
     WeatherForecastCache,
 )
 from app.models.diagnosis import DiagnosisResult, DiagnosisTask, PreventionPlan
+from app.models.case import CaseLibrary
 from app.models.image import CollectedImage
 from app.models.knowledge import HarvestRestriction, Pesticide
 from app.models.plot import Plot
@@ -494,6 +495,25 @@ def build_farm_graph(db: Session):
                 ]
             )
             db.commit()
+
+        # 统一生成待确认案例（幂等）：异常结果无论置信度高低均进入案例库，
+        # 供农场主在诊断详情页一键确认/纠正后回流（healthy 结果不生成案例）。
+        # 修复缺陷 D-04：此前仅低置信度路径（pending_case_node）生成案例，
+        # 高置信度诊断详情页因缺少 case 关联而不显示确认/纠正操作区。
+        if task_id and not diagnosis.get("healthy"):
+            case_exists = db.query(CaseLibrary.id).filter(CaseLibrary.task_id == task_id).first()
+            if case_exists is None:
+                db.add(
+                    CaseLibrary(
+                        task_id=task_id,
+                        ai_disease_name=disease_name,
+                        status="pending",
+                        source=state.get("source", "manual"),
+                        disease_category=disease_category,
+                    )
+                )
+                db.commit()
+
         _persist(db, {**state, "diagnosis": diagnosis}, "diagnosis")
         return {"diagnosis": diagnosis, "low_confidence": diagnosis["low_confidence"]}
 

@@ -3,13 +3,14 @@
  * 文件说明：农场总览页（02）。
  * 采收禁令角标区、地块实况卡片网格、今日待办、最新预警滚动条、今日天气条与快捷入口；30 秒自动轮询。
  */
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getOverview } from '@/api/overview'
 import { useAsyncData } from '@/composables/useAsyncData'
 import StateWrap from '@/components/StateWrap.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatMonthDay, plotTypeLabel, sourceLabel, formatConfidence, alertLevelTag } from '@/utils/format'
+import type { HarvestBanner } from '@/types/farm'
 
 const router = useRouter()
 /** 认证状态（member 隐藏写操作入口） */
@@ -17,6 +18,25 @@ const auth = useAuthStore()
 
 /** 总览数据异步状态 */
 const { loading, failed, data, load } = useAsyncData(getOverview)
+
+/**
+ * 按地块合并采收禁令角标（同一地块多条禁令时展示最早到期日并折叠计数）。
+ * 修复缺陷 D-10：此前同一地块多条禁令重复平铺展示，信息冗余。
+ */
+const mergedBanners = computed<Array<HarvestBanner & { extra: number }>>(() => {
+  const map = new Map<number, HarvestBanner & { extra: number }>()
+  for (const banner of data.value?.harvest_banners ?? []) {
+    const current = map.get(banner.plot_id)
+    if (current === undefined) {
+      map.set(banner.plot_id, { ...banner, extra: 0 })
+    } else {
+      current.extra += 1
+      // 展示最早到期的禁令日期
+      if (banner.ban_until < current.ban_until) current.ban_until = banner.ban_until
+    }
+  }
+  return [...map.values()]
+})
 
 /** 轮询定时器句柄 */
 let pollTimer: number | undefined
@@ -66,17 +86,17 @@ onUnmounted(() => {
         </div>
 
         <template v-else>
-          <!-- 采收禁令角标区 -->
-          <div v-if="data.harvest_banners.length > 0" class="page-card banner-zone">
+          <!-- 采收禁令角标区（同地块多条禁令合并展示最早到期日） -->
+          <div v-if="mergedBanners.length > 0" class="page-card banner-zone">
             <el-tag
-              v-for="banner in data.harvest_banners"
+              v-for="banner in mergedBanners"
               :key="banner.plot_id"
               type="warning"
               effect="dark"
               size="large"
               class="banner-tag"
             >
-              {{ banner.plot_name }} · {{ formatMonthDay(banner.ban_until) }}前不可采收
+              {{ banner.plot_name }} · {{ formatMonthDay(banner.ban_until) }}前不可采收<template v-if="banner.extra > 0">（另有 {{ banner.extra }} 条禁令）</template>
             </el-tag>
           </div>
 
