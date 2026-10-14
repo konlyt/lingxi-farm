@@ -125,6 +125,8 @@ export interface EnvTrend {
     humidity: Array<number | null>
     /** 土壤墒情序列 */
     soil_moisture: Array<number | null>
+    /** 光照序列（klx） */
+    light?: Array<number | null>
   }
 }
 
@@ -750,6 +752,15 @@ export interface DashboardStats {
   recent_alerts: AlertItem[]
   /** 各地块环境实况 */
   env_realtime: DashboardEnvItem[]
+  /** 当天室外天气（和风缓存） */
+  weather_today?: {
+    date: string
+    condition: string | null
+    temp_high: number | null
+    temp_low: number | null
+    precipitation_mm: number | null
+    wind_scale: string | null
+  } | null
 }
 
 /** 置信度阈值配置（分病种） */

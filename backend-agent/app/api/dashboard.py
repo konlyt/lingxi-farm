@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.response import ok
 from app.core.security import require_owner
+from app.models.advice import WeatherForecastCache
 from app.models.alert import Alert
 from app.models.device import Device
 from app.models.diagnosis import DiagnosisResult, DiagnosisTask
@@ -118,6 +119,28 @@ def dashboard_stats(db: Session = Depends(get_db)) -> dict:
         for plot in plots
     ]
 
+    # 7) 当天室外天气（和风缓存，取任意在种地块的当日预报）
+    today_weather_row = (
+        db.query(WeatherForecastCache)
+        .filter(
+            WeatherForecastCache.data_type == "weather_forecast",
+            WeatherForecastCache.forecast_date == today(),
+        )
+        .order_by(WeatherForecastCache.plot_id.asc())
+        .first()
+    )
+    weather_today: dict[str, Any] | None = None
+    if today_weather_row is not None:
+        wd = today_weather_row.data_json or {}
+        weather_today = {
+            "date": today().isoformat(),
+            "condition": wd.get("condition"),
+            "temp_high": wd.get("temp_high"),
+            "temp_low": wd.get("temp_low"),
+            "precipitation_mm": wd.get("precipitation_mm"),
+            "wind_scale": wd.get("wind_scale"),
+        }
+
     return ok(
         {
             "diagnosis_trend": diagnosis_trend,
@@ -126,5 +149,6 @@ def dashboard_stats(db: Session = Depends(get_db)) -> dict:
             "device_health": device_health,
             "recent_alerts": recent_alerts,
             "env_realtime": env_realtime,
+            "weather_today": weather_today,
         }
     )

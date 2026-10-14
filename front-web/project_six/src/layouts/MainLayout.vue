@@ -72,7 +72,7 @@ onMounted(() => {
     <!-- 桌面端左侧固定导航 -->
     <el-aside v-if="!isMobile" width="220px" class="app-aside">
       <div class="brand" @click="go('/dashboard')">
-        <el-icon :size="22"><Sunny /></el-icon>
+        <el-icon :size="22" class="brand-icon"><Sunny /></el-icon>
         <span>农场智能管护系统</span>
       </div>
       <el-menu :default-active="activePath" :default-openeds="openMenus" router class="app-menu">
@@ -125,7 +125,7 @@ onMounted(() => {
           <div class="user-trigger">
             <el-avatar :size="30" class="user-avatar">{{ avatarChar }}</el-avatar>
             <span class="user-name">{{ auth.user?.nickname ?? auth.user?.username ?? '未登录' }}</span>
-            <el-tag :type="auth.isOwner ? 'danger' : 'primary'" size="small">{{ roleLabel }}</el-tag>
+            <el-tag :type="auth.isOwner ? 'success' : 'info'" size="small" effect="plain">{{ roleLabel }}</el-tag>
             <el-icon class="user-arrow"><ArrowDown /></el-icon>
           </div>
           <template #dropdown>
@@ -191,9 +191,10 @@ onMounted(() => {
   height: 100%;
 }
 
+/* ===== 侧边栏：深森林绿底 ===== */
 .app-aside {
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
+  background: linear-gradient(180deg, var(--farm-primary-700) 0%, #16402a 100%);
+  border-right: none;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -203,38 +204,98 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 16px;
+  padding: 18px 16px 16px;
   font-size: 15px;
   font-weight: 600;
-  color: #409eff;
+  color: #f3f8f4;
   cursor: pointer;
   white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.brand-icon {
+  color: #7fd6a4;
+}
+
+/* 深色侧边栏上的菜单：覆盖默认文字/背景 */
 .app-menu {
   border-right: none;
   flex: 1;
-  /* flex 子项默认 min-height:auto 不收缩，低视口下菜单会溢出侧栏且不可滚动，
-     此处允许收缩并自身滚动，保证菜单项在任意窗口高度下均可达 */
   min-height: 0;
   overflow-y: auto;
+  background: transparent;
+  --el-menu-text-color: rgba(230, 242, 234, 0.85);
+  --el-menu-hover-bg-color: rgba(255, 255, 255, 0.06);
+  --el-menu-active-color: #ffffff;
+}
+
+.app-menu :deep(.el-menu-item),
+.app-menu :deep(.el-sub-menu__title) {
+  color: rgba(230, 242, 234, 0.85);
+  height: 44px;
+  line-height: 44px;
+  margin: 2px 8px;
+  border-radius: 8px;
+}
+
+.app-menu :deep(.el-menu-item.is-active) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  position: relative;
+}
+
+.app-menu :deep(.el-menu-item.is-active)::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: #7fd6a4;
+}
+
+.app-menu :deep(.el-sub-menu__title:hover),
+.app-menu :deep(.el-menu-item:hover) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.app-menu :deep(.el-sub-menu .el-menu) {
+  background: transparent;
 }
 
 .app-body {
   min-width: 0;
+  background: var(--farm-bg);
 }
 
+/* ===== 顶栏：毛玻璃 ===== */
 .app-header {
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--farm-border-light);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 20px;
 }
 
 .header-title {
   font-size: 16px;
   font-weight: 600;
+  color: var(--farm-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-title::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--farm-primary-500);
 }
 
 /* ===== 右上角用户下拉 ===== */
@@ -243,17 +304,17 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   outline: none;
 }
 
 .user-trigger:hover {
-  background: #f5f7fa;
+  background: rgba(46, 125, 79, 0.08);
 }
 
 .user-avatar {
-  background: #409eff;
+  background: var(--farm-primary-500);
   color: #fff;
   font-size: 14px;
   font-weight: 600;
@@ -262,7 +323,7 @@ onMounted(() => {
 
 .user-name {
   font-size: 13px;
-  color: #303133;
+  color: var(--farm-text-primary);
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -271,7 +332,7 @@ onMounted(() => {
 
 .user-arrow {
   font-size: 12px;
-  color: #909399;
+  color: var(--farm-text-secondary);
 }
 
 /* 下拉内的个人信息头 */
@@ -291,7 +352,7 @@ onMounted(() => {
 .menu-profile-name {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--farm-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -300,14 +361,15 @@ onMounted(() => {
 .menu-profile-meta {
   margin-top: 2px;
   font-size: 12px;
-  color: #909399;
+  color: var(--farm-text-secondary);
 }
 
 .app-main {
-  padding: 16px;
+  padding: 20px;
   overflow-y: auto;
 }
 
+/* ===== 移动端底部 Tab ===== */
 .tab-bar {
   position: fixed;
   left: 0;
@@ -315,9 +377,10 @@ onMounted(() => {
   bottom: 0;
   height: 56px;
   background: #fff;
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid var(--farm-border-light);
   display: flex;
   z-index: 100;
+  box-shadow: 0 -2px 10px rgba(27, 77, 50, 0.05);
 }
 
 .tab-item {
@@ -328,24 +391,25 @@ onMounted(() => {
   justify-content: center;
   gap: 2px;
   font-size: 11px;
-  color: #909399;
+  color: var(--farm-text-secondary);
   cursor: pointer;
 }
 
 .tab-item.active {
-  color: #409eff;
+  color: var(--farm-primary-500);
+  font-weight: 600;
 }
 
 .tab-pop-item {
   padding: 8px 0;
   text-align: center;
   cursor: pointer;
-  color: #303133;
+  color: var(--farm-text-primary);
   font-size: 13px;
 }
 
 .tab-pop-item:hover {
-  color: #409eff;
+  color: var(--farm-primary-500);
 }
 
 @media (max-width: 991px) {

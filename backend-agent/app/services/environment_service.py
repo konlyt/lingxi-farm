@@ -237,13 +237,17 @@ def get_realtime(db: Session, plot_id: int) -> dict[str, Any]:
 def get_trend(db: Session, plot_id: int, range_key: str = "24h") -> dict[str, Any]:
     """查询地块环境趋势（按小时/天粒度取均值）。
 
+    时间轴智能对齐：默认以当前时间为终点往前推 range；若当前窗口内无任何
+    SensorReading（例如后端刚重启、设备数据停在历史某个时刻），则自动回退到
+    "该地块最新一条读数往前推 range"，保证趋势图始终有曲线可画。
+
     Args:
         db: 数据库会话。
         plot_id: 地块ID。
         range_key: 时间范围 24h（逐小时 24 点）/ 7d（逐天 7 点）。
 
     Returns:
-        dict: {range, times, series:{temp, humidity, soil_moisture}}。
+        dict: {range, times, series:{temp, humidity, soil_moisture, light}}。
 
     Raises:
         BusinessException: 400 range 非法。
@@ -251,15 +255,33 @@ def get_trend(db: Session, plot_id: int, range_key: str = "24h") -> dict[str, An
     if range_key not in ("24h", "7d"):
         raise BusinessException(400, "range 仅支持 24h/7d")
     current_time = now()
+
+    # 查该地块最新一条读数，用于空窗回退
+    latest_reading = (
+        db.query(SensorReading)
+        .filter(SensorReading.plot_id == plot_id)
+        .order_by(SensorReading.reported_at.desc())
+        .first()
+    )
+
     if range_key == "24h":
-        start_time = current_time - timedelta(hours=24)
-        # 逐小时聚合：DATE_FORMAT 到小时
+        # 默认窗口：当前往前 24 小时
+        end_time = current_time
+        start_time = end_time - timedelta(hours=24)
         fmt = "%Y-%m-%d %H:00:00"
         point_count = 24
+        # 空窗回退：最新一条落在默认窗口之外时，把终点对齐到最新一条
+        if latest_reading is not None and latest_reading.reported_at < start_time:
+            end_time = latest_reading.reported_at.replace(minute=0, second=0, microsecond=0)
+            start_time = end_time - timedelta(hours=24)
     else:
-        start_time = current_time - timedelta(days=7)
+        end_time = current_time
+        start_time = end_time - timedelta(days=7)
         fmt = "%Y-%m-%d"
         point_count = 7
+        if latest_reading is not None and latest_reading.reported_at < start_time:
+            end_time = latest_reading.reported_at
+            start_time = end_time - timedelta(days=7)
 
     rows = (
         db.query(
@@ -270,7 +292,7 @@ def get_trend(db: Session, plot_id: int, range_key: str = "24h") -> dict[str, An
         .filter(
             SensorReading.plot_id == plot_id,
             SensorReading.reported_at >= start_time,
-            SensorReading.metric.in_(["temp", "humidity", "soil_moisture"]),
+            SensorReading.metric.in_(["temp", "humidity", "soil_moisture", "light"]),
         )
         .group_by("bucket", SensorReading.metric)
         .all()
@@ -279,17 +301,22 @@ def get_trend(db: Session, plot_id: int, range_key: str = "24h") -> dict[str, An
     for bucket, metric, avg_value in rows:
         bucket_data.setdefault(str(bucket), {})[metric] = round(float(avg_value), 1)
 
-    # 生成完整时间轴（缺失补 None）
+    # 生成完整时间轴（缺失补 None），按 end_time 对齐
     times: list[str] = []
-    series: dict[str, list[Optional[float]]] = {"temp": [], "humidity": [], "soil_moisture": []}
+    series: dict[str, list[Optional[float]]] = {
+        "temp": [],
+        "humidity": [],
+        "soil_moisture": [],
+        "light": [],
+    }
     if range_key == "24h":
         for offset in range(point_count, 0, -1):
-            point = (current_time - timedelta(hours=offset - 1)).replace(minute=0, second=0, microsecond=0)
+            point = (end_time - timedelta(hours=offset - 1)).replace(minute=0, second=0, microsecond=0)
             key = point.strftime("%Y-%m-%d %H:00:00")
             _append_point(times, series, key, bucket_data)
     else:
         for offset in range(point_count - 1, -1, -1):
-            point = (current_time - timedelta(days=offset)).date()
+            point = (end_time - timedelta(days=offset)).date()
             key = point.strftime("%Y-%m-%d")
             _append_point(times, series, key, bucket_data)
     return {"range": range_key, "times": times, "series": series}
@@ -307,7 +334,7 @@ def _append_point(times: list[str], series: dict[str, list[Optional[float]]],
     """
     times.append(key)
     values = bucket_data.get(key, {})
-    for metric in ("temp", "humidity", "soil_moisture"):
+    for metric in ("temp", "humidity", "soil_moisture", "light"):
         series[metric].append(values.get(metric))
 
 

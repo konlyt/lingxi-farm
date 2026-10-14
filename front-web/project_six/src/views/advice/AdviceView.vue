@@ -108,6 +108,22 @@ void loadPlots()
         class="fallback-tip"
       />
 
+      <!-- 全局总结与风险提示（7天整体概览，只显示一次） -->
+      <div
+        v-if="adviceBody && (adviceBody.summary || adviceBody.risk_notes)"
+        class="overview-card"
+      >
+        <div class="overview-title">本周总结与风险提示</div>
+        <div v-if="adviceBody.summary" class="overview-block">
+          <span class="overview-label">总结</span>
+          <p class="overview-text">{{ adviceBody.summary }}</p>
+        </div>
+        <div v-if="adviceBody.risk_notes" class="overview-block">
+          <span class="overview-label risk">风险提示</span>
+          <p class="overview-text">{{ adviceBody.risk_notes }}</p>
+        </div>
+      </div>
+
       <!-- 7 天建议时间轴（irrigate/fertilize 为整段文本） -->
       <StateWrap :loading="loading" :failed="failed" :rows="6" @retry="load()">
         <el-empty v-if="!adviceBody || adviceBody.items.length === 0" description="暂无建议，将于每日 06:00 生成" />
@@ -125,14 +141,6 @@ void loadPlots()
                 <span class="advice-icon">🌾 施肥</span>
                 <span>{{ item.fertilize }}</span>
               </div>
-              <el-collapse v-if="adviceBody.summary || adviceBody.risk_notes" class="basis-collapse">
-                <el-collapse-item title="查看总结与风险提示" :name="item.date">
-                  <div class="basis-text">
-                    <p v-if="adviceBody.summary"><b>总结：</b>{{ adviceBody.summary }}</p>
-                    <p v-if="adviceBody.risk_notes"><b>风险提示：</b>{{ adviceBody.risk_notes }}</p>
-                  </div>
-                </el-collapse-item>
-              </el-collapse>
             </div>
           </div>
         </div>
@@ -161,6 +169,55 @@ void loadPlots()
   margin-bottom: 14px;
 }
 
+/* 全局总结卡片（农业绿浅底，区别于每日卡片） */
+.overview-card {
+  background: linear-gradient(135deg, #f0f9eb 0%, #e8f5e9 100%);
+  border: 1px solid #c2e7b0;
+  border-left: 4px solid #2e7d4f;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.overview-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1b4d32;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+}
+
+.overview-block {
+  margin-bottom: 8px;
+}
+
+.overview-block:last-child {
+  margin-bottom: 0;
+}
+
+.overview-label {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2e7d4f;
+  background: rgba(46, 125, 79, 0.1);
+  padding: 2px 8px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+
+.overview-label.risk {
+  color: #c4574f;
+  background: rgba(196, 87, 79, 0.1);
+}
+
+.overview-text {
+  margin: 0;
+  font-size: 13px;
+  color: #4a5d52;
+  line-height: 1.7;
+}
+
 .day-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -171,6 +228,11 @@ void loadPlots()
   border: 1px solid #e4e7ed;
   border-radius: 8px;
   overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+
+.day-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .day-head {
@@ -181,6 +243,7 @@ void loadPlots()
 .day-date {
   font-weight: 600;
   font-size: 14px;
+  color: #1b4d32;
 }
 
 .day-body {
@@ -192,19 +255,15 @@ void loadPlots()
   gap: 8px;
   font-size: 13px;
   margin-bottom: 8px;
+  color: #333;
+  line-height: 1.6;
+}
+
+.advice-row:last-child {
+  margin-bottom: 0;
 }
 
 .advice-icon {
   flex-shrink: 0;
-}
-
-.basis-collapse {
-  border: none;
-}
-
-.basis-text {
-  font-size: 12px;
-  color: #606266;
-  line-height: 1.6;
 }
 </style>

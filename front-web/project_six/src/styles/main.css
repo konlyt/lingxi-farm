@@ -1,6 +1,7 @@
 /*
  * 文件说明：全局基础样式。
  * 统一页面容器、卡片、三态辅助类与移动端适配基础规则。
+ * 颜色与圆角统一引用 tokens.css 中的 --farm-* 变量。
  */
 
 html,
@@ -13,8 +14,8 @@ body,
 
 body {
   font-family: 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  background-color: #f5f7fa;
-  color: #303133;
+  background-color: var(--farm-bg);
+  color: var(--farm-text-primary);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -30,17 +31,32 @@ body {
 
 /* 通用内容卡片 */
 .page-card {
-  background: #fff;
-  border-radius: 8px;
+  background: var(--farm-surface);
+  border: 1px solid var(--farm-border-light);
+  border-radius: var(--farm-radius);
   padding: 16px;
   margin-bottom: 16px;
+  box-shadow: var(--farm-shadow-sm);
 }
 
 .page-card-title {
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 12px;
-  color: #303133;
+  color: var(--farm-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 卡片标题前的绿色小竖条，强化分组感 */
+.page-card-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--farm-primary-500);
 }
 
 /* 异常三态布局 */
@@ -53,19 +69,25 @@ body {
 
 /* 次要说明文字 */
 .text-muted {
-  color: #909399;
+  color: var(--farm-text-secondary);
   font-size: 12px;
 }
 
 /* 环境指标越限红色高亮 */
 .metric-exceeded {
-  color: #f56c6c;
+  color: var(--farm-danger);
   font-weight: 600;
+}
+
+/* 数字等宽，便于数值对齐 */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
 /* 移动端适配：底部 Tab 预留空间 */
 @media (max-width: 991px) {
   .page-card {
     padding: 12px;
+    border-radius: var(--farm-radius);
   }
 }

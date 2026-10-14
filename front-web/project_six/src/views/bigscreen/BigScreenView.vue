@@ -15,9 +15,45 @@ import { useAsyncData } from '@/composables/useAsyncData'
 import ClassicDashboard from '@/views/bigscreen/ClassicDashboard.vue'
 import type { Device } from '@/types/farm'
 import type { TwinSceneKind } from '@/three/scene/greenhouse'
+import * as ElementIcon from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
+
+/* ================= 顶部时钟（本地时间，每秒刷新） ================= */
+const now = ref(new Date())
+let clockTimer: number | undefined
+
+const clockText = computed(() => {
+  const d = now.value
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+})
+
+const dateText = computed(() => {
+  const d = now.value
+  const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${weekDays[d.getDay()]} ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+})
+
+/* 当天天气（来自和风缓存） */
+const weatherToday = computed(() => stats.data.value?.weather_today ?? null)
+
+/** 根据天气状况文字匹配图标组件 */
+function weatherIcon(condition?: string | null): any {
+  const text = condition ?? ''
+  // Element Plus 图标库仅 Sunny/Cloudy 两个天气图标，按文字语义映射
+  if (/晴/.test(text)) return ElementIcon.Sunny
+  return ElementIcon.Cloudy
+}
+
+/** 展示温度：取当日最高温，无数据时显示 -- */
+const weatherTemp = computed(() => {
+  const w = weatherToday.value
+  if (!w || w.temp_high == null) return '--°'
+  return `${w.temp_high}°`
+})
 
 /** 画布与容器引用 */
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -231,6 +267,8 @@ function switchView(to3d: boolean): void {
 
 onMounted(() => {
   void stats.load()
+  // 时钟每秒刷新
+  clockTimer = window.setInterval(() => { now.value = new Date() }, 1000)
   // 60 秒定时刷新聚合数据
   refreshTimer = window.setInterval(() => {
     if (!stats.loading.value) void stats.load()
@@ -274,6 +312,7 @@ watch(view3d, (to3d) => {
 
 onUnmounted(() => {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer)
+  if (clockTimer !== undefined) window.clearInterval(clockTimer)
   handle.dispose()
 })
 </script>
@@ -311,6 +350,24 @@ onUnmounted(() => {
           <button class="ghost-btn" type="button" @click="switchView(false)">经典视图</button>
         </div>
       </header>
+
+      <!-- 左上方：时钟 + 当天天气横条（和风数据） -->
+      <div class="weather-clock">
+        <div class="wc-time">
+          <span class="wc-clock">{{ clockText }}</span>
+          <span class="wc-date">{{ dateText }}</span>
+        </div>
+        <div class="wc-divider" />
+        <div class="wc-weather">
+          <el-icon :size="24" class="wc-icon">
+            <component :is="weatherIcon(weatherToday?.condition)" />
+          </el-icon>
+          <div class="wc-weather-text">
+            <span class="wc-temp">{{ weatherTemp }}</span>
+            <span class="wc-condition">{{ weatherToday?.condition ?? '天气获取中' }}</span>
+          </div>
+        </div>
+      </div>
 
       <!-- 左侧：环境调控中枢 -->
       <aside class="panel left">
@@ -415,7 +472,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #0a1428;
+  background: #0c1a14;
   font-family: 'Microsoft YaHei', sans-serif;
 }
 
@@ -453,15 +510,15 @@ onUnmounted(() => {
   margin: 0;
   font-size: 22px;
   font-weight: 600;
-  color: #eafff8;
+  color: #eafff2;
   letter-spacing: 2px;
-  text-shadow: 0 0 14px rgba(53, 208, 186, 0.45);
+  text-shadow: 0 0 14px rgba(52, 211, 153, 0.45);
 }
 
 .title-sub {
   margin-top: 2px;
   font-size: 12px;
-  color: #8fb5a8;
+  color: #9fc4b0;
 }
 
 .top-actions {
@@ -470,19 +527,90 @@ onUnmounted(() => {
   gap: 10px;
 }
 
+/* ===== 左上方：时钟 + 天气横条（和风数据） ===== */
+.weather-clock {
+  position: absolute;
+  left: 16px;
+  top: 76px;
+  z-index: 5;
+  width: 296px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  background: rgba(12, 26, 20, 0.72);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+}
+
+.wc-time {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.wc-clock {
+  font-size: 22px;
+  font-weight: 600;
+  color: #eafff2;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+}
+
+.wc-date {
+  font-size: 11px;
+  color: #9fc4b0;
+  margin-top: 2px;
+}
+
+.wc-divider {
+  width: 1px;
+  height: 34px;
+  background: rgba(52, 211, 153, 0.25);
+}
+
+.wc-weather {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wc-icon {
+  color: #ffd666;
+}
+
+.wc-weather-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.wc-temp {
+  font-size: 18px;
+  font-weight: 600;
+  color: #eafff2;
+}
+
+.wc-condition {
+  font-size: 11px;
+  color: #9fc4b0;
+  margin-top: 2px;
+}
+
 .source-switch {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
-  background: rgba(8, 20, 18, 0.82);
-  border: 1px solid rgba(53, 208, 186, 0.35);
+  background: rgba(12, 26, 20, 0.82);
+  border: 1px solid rgba(52, 211, 153, 0.35);
   border-radius: 6px;
 }
 
 .sw-label {
   font-size: 12px;
-  color: #8fb5a8;
+  color: #9fc4b0;
   white-space: nowrap;
 }
 
@@ -491,43 +619,43 @@ onUnmounted(() => {
 }
 
 .sw-select :deep(.el-input__wrapper) {
-  background: rgba(53, 208, 186, 0.08);
-  box-shadow: 0 0 0 1px rgba(53, 208, 186, 0.35) inset;
+  background: rgba(52, 211, 153, 0.08);
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.35) inset;
 }
 
 .sw-select :deep(.el-input__inner) {
-  color: #d7ece4;
+  color: #d8ecdc;
 }
 
 .ghost-btn {
   padding: 6px 14px;
-  background: rgba(8, 20, 18, 0.82);
-  border: 1px solid rgba(53, 208, 186, 0.45);
+  background: rgba(12, 26, 20, 0.82);
+  border: 1px solid rgba(52, 211, 153, 0.45);
   border-radius: 6px;
-  color: #7fe8d8;
+  color: #86e8b8;
   font-size: 13px;
   cursor: pointer;
 }
 
 .ghost-btn:hover {
   color: #fff;
-  border-color: rgba(53, 208, 186, 0.8);
+  border-color: rgba(52, 211, 153, 0.8);
 }
 
 /* ===== 悬浮玻璃面板 ===== */
 .panel {
   position: absolute;
-  top: 76px;
+  top: 156px;
   z-index: 5;
   width: 296px;
-  max-height: calc(100% - 120px);
+  max-height: calc(100% - 172px);
   overflow-y: auto;
-  background: rgba(8, 20, 18, 0.85);
-  border: 1px solid rgba(53, 208, 186, 0.3);
+  background: rgba(12, 26, 20, 0.85);
+  border: 1px solid rgba(52, 211, 153, 0.3);
   border-radius: 10px;
-  padding: 14px 16px;
+  padding: 10px 14px;
   backdrop-filter: blur(6px);
-  color: #d7ece4;
+  color: #d8ecdc;
 }
 
 .panel.left {
@@ -543,13 +671,13 @@ onUnmounted(() => {
   display: flex;
   gap: 9px;
   align-items: flex-start;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .p-tick {
   width: 4px;
   align-self: stretch;
-  background: #35d0ba;
+  background: #34d399;
   border-radius: 2px;
   flex: none;
 }
@@ -557,53 +685,53 @@ onUnmounted(() => {
 .p-main {
   font-size: 15px;
   font-weight: 600;
-  color: #eafff8;
+  color: #eafff2;
 }
 
 .p-sub {
   margin-top: 2px;
   font-size: 12px;
-  color: #8fb5a8;
+  color: #9fc4b0;
 }
 
 .sec-title {
-  margin: 12px 0 6px;
+  margin: 8px 0 4px;
   font-size: 12px;
   letter-spacing: 1px;
-  color: #35d0ba;
+  color: #34d399;
 }
 
 .env-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .env-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  background: rgba(53, 208, 186, 0.06);
+  padding: 4px 8px;
+  background: rgba(52, 211, 153, 0.06);
   border-radius: 5px;
   font-size: 13px;
 }
 
 .env-label {
-  color: #9fc4b5;
+  color: #b5d4c2;
   flex: 1;
 }
 
 .env-value {
-  color: #eafff8;
+  color: #eafff2;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .env-state {
   font-size: 11px;
-  color: #35d0ba;
-  border: 1px solid rgba(53, 208, 186, 0.45);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.45);
   border-radius: 3px;
   padding: 0 5px;
   line-height: 16px;
@@ -625,14 +753,14 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 6px 8px;
 }
 
 .dev-name {
   font-size: 13px;
   font-weight: 600;
-  color: #eafff8;
-  margin-bottom: 4px;
+  color: #eafff2;
+  margin-bottom: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -643,7 +771,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: #8fb5a8;
+  color: #9fc4b0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -652,7 +780,7 @@ onUnmounted(() => {
 .dev-empty {
   padding: 10px 8px;
   font-size: 12px;
-  color: #6d8f82;
+  color: #7a8a80;
   background: rgba(255, 255, 255, 0.03);
   border-radius: 6px;
   text-align: center;
@@ -670,12 +798,12 @@ onUnmounted(() => {
 }
 
 .dot.on {
-  background: #35d0ba;
-  box-shadow: 0 0 5px rgba(53, 208, 186, 0.9);
+  background: #34d399;
+  box-shadow: 0 0 5px rgba(52, 211, 153, 0.9);
 }
 
 .dot.off {
-  background: #5a6f66;
+  background: #6b7a72;
 }
 
 /* ===== 时间轴 ===== */
@@ -693,7 +821,7 @@ onUnmounted(() => {
   flex: none;
   width: 46px;
   text-align: right;
-  color: #35d0ba;
+  color: #34d399;
   font-size: 14px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -701,16 +829,16 @@ onUnmounted(() => {
 
 /* ===== 群体健康 ===== */
 .health-card {
-  background: rgba(53, 208, 186, 0.05);
-  border: 1px solid rgba(53, 208, 186, 0.18);
+  background: rgba(52, 211, 153, 0.05);
+  border: 1px solid rgba(52, 211, 153, 0.18);
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   font-size: 12px;
 }
 
 .health-line {
-  color: #9fc4b5;
-  margin-bottom: 4px;
+  color: #b5d4c2;
+  margin-bottom: 2px;
 }
 
 .health-alert {
@@ -721,13 +849,13 @@ onUnmounted(() => {
 }
 
 .health-ok {
-  color: #7fe8d8;
+  color: #86e8b8;
 }
 
 /* ===== 右侧 Agent ===== */
 .agent-status {
   font-size: 12px;
-  color: #8fb5a8;
+  color: #9fc4b0;
   line-height: 1.6;
   margin-bottom: 10px;
 }
@@ -735,17 +863,17 @@ onUnmounted(() => {
 .agent-btn {
   width: 100%;
   padding: 8px 0;
-  background: rgba(53, 208, 186, 0.14);
-  border: 1px solid rgba(53, 208, 186, 0.55);
+  background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.55);
   border-radius: 6px;
-  color: #7fe8d8;
+  color: #86e8b8;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .agent-btn:hover {
-  background: rgba(53, 208, 186, 0.24);
+  background: rgba(52, 211, 153, 0.24);
 }
 
 .agent-btn.active {
@@ -776,11 +904,11 @@ onUnmounted(() => {
 }
 
 .kpi-num.cyan {
-  color: #4ea6ff;
+  color: #7fb8ff;
 }
 
 .kpi-num.green {
-  color: #35d0ba;
+  color: #34d399;
 }
 
 .kpi-num.red {
@@ -790,13 +918,13 @@ onUnmounted(() => {
 .kpi-cap {
   margin-top: 2px;
   font-size: 11px;
-  color: #8fb5a8;
+  color: #9fc4b0;
 }
 
 .agent-hint {
   margin-top: 10px;
   font-size: 11px;
-  color: #6d8f82;
+  color: #7a8a80;
   line-height: 1.5;
 }
 
@@ -808,10 +936,10 @@ onUnmounted(() => {
   transform: translateX(-50%);
   z-index: 5;
   padding: 5px 16px;
-  background: rgba(8, 20, 18, 0.72);
-  border: 1px solid rgba(53, 208, 186, 0.25);
+  background: rgba(12, 26, 20, 0.72);
+  border: 1px solid rgba(52, 211, 153, 0.25);
   border-radius: 5px;
-  color: #8fb5a8;
+  color: #9fc4b0;
   font-size: 12px;
   white-space: nowrap;
 }

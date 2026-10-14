@@ -163,6 +163,7 @@ def _mock_device_report_job() -> None:
             return
         current = now()
         day_progress = (current.hour * 60 + current.minute) / 1440.0
+        hour_fraction = current.hour + current.minute / 60.0
         for device in devices:
             """每台传感器按 id 做稳定偏移（-1.2 ~ +1.2℃ / ±5% 湿度），模拟不同小环境。"""
             offset = ((device.id % 5) - 2) * 0.6
@@ -174,6 +175,13 @@ def _mock_device_report_job() -> None:
             soil_value = round(
                 max(30.0, min(85.0, 62.0 - 6.0 * math.sin(2 * math.pi * day_progress)) + offset * 2.0), 1
             )
+            # 光照：6-18 点按太阳高度角，峰值约 30klx，夜间为 0；大棚内适当衰减
+            if 6.0 <= hour_fraction <= 18.0:
+                light_value = round(
+                    max(0.0, 28.0 * math.sin(math.pi * (hour_fraction - 6.0) / 12.0)) + offset * 2.0, 1
+                )
+            else:
+                light_value = 0.0
             save_readings_and_check(
                 session,
                 device,
@@ -181,6 +189,7 @@ def _mock_device_report_job() -> None:
                     {"metric": "temp", "value": temp_value},
                     {"metric": "humidity", "value": humidity_value},
                     {"metric": "soil_moisture", "value": soil_value},
+                    {"metric": "light", "value": light_value},
                 ],
             )
         logger.info("模拟设备上报完成: %s 台环境传感器", len(devices))
@@ -280,8 +289,11 @@ def start_scheduler() -> None:
     scheduler.add_job(_device_offline_scan_job, "interval", hours=1, id="device_offline_scan")
     # 每小时禁令解除扫描
     scheduler.add_job(_harvest_restriction_release_job, "interval", hours=1, id="harvest_restriction_release")
-    # 每 30 分钟模拟设备上报
-    scheduler.add_job(_mock_device_report_job, "interval", minutes=30, id="mock_device_report")
+    # 每 30 分钟模拟设备上报（启动后立即执行首次，避免重启后端后趋势图空窗）
+    scheduler.add_job(
+        _mock_device_report_job, "interval", minutes=30, id="mock_device_report",
+        next_run_time=datetime.now(),
+    )
     # 每 3 小时气象预报拉取（启动后立即执行首次）
     scheduler.add_job(
         _weather_forecast_job, "interval", hours=3, id="weather_forecast",

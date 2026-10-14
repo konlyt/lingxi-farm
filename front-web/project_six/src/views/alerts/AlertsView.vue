@@ -61,6 +61,18 @@ const failed = ref(false)
 const resolving = ref(false)
 
 /**
+ * 表格行 class：按等级/状态注入左侧色条样式。
+ * @param param0 当前行数据
+ * @returns 行 class
+ */
+function rowClassName({ row }: { row: AlertItem }): string {
+  if (row.status === 'resolved') return 'alert-row-resolved'
+  if (row.level === 'high') return 'alert-row-high'
+  if (row.level === 'medium') return 'alert-row-medium'
+  return ''
+}
+
+/**
  * 加载预警列表。
  */
 async function load(): Promise<void> {
@@ -141,7 +153,7 @@ onMounted(() => {
       <StateWrap :loading="loading" :failed="failed" :rows="7" @retry="load()">
         <el-empty v-if="items.length === 0" description="当前无预警" />
         <template v-else>
-          <el-table :data="items" stripe @row-click="goDetail">
+          <el-table :data="items" stripe :row-class-name="rowClassName" @row-click="goDetail">
             <el-table-column label="类型" width="120">
               <template #default="{ row }">
                 <div class="type-cell">
@@ -220,5 +232,25 @@ onMounted(() => {
 
 :deep(.el-table__row) {
   cursor: pointer;
+}
+
+/* 预警行等级色条：用 inset 阴影在单元格左侧画一条色条，不破坏表格布局 */
+:deep(.el-table__row.alert-row-high td:first-child) {
+  box-shadow: inset 3px 0 0 var(--farm-danger);
+}
+:deep(.el-table__row.alert-row-medium td:first-child) {
+  box-shadow: inset 3px 0 0 var(--farm-accent);
+}
+:deep(.el-table__row.alert-row-resolved td:first-child) {
+  box-shadow: inset 3px 0 0 var(--farm-text-secondary);
+  opacity: 0.75;
+}
+
+/* 高优未解决预警呼吸点（在等级列 Tag 前由表格行样式自然呈现，这里给行一个淡底） */
+:deep(.el-table__row.alert-row-high) {
+  background: rgba(217, 83, 79, 0.04);
+}
+:deep(.el-table__row.alert-row-medium) {
+  background: rgba(245, 158, 11, 0.04);
 }
 </style>

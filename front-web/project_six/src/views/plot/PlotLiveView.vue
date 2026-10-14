@@ -71,14 +71,18 @@ const adviceBody = computed(() => advice.value?.data ?? null)
 function buildTrendOption(data: EnvTrend): EChartsOption {
   return {
     tooltip: { trigger: 'axis' },
-    legend: { data: ['温度', '湿度', '土壤墒情'], top: 0 },
-    grid: { left: 48, right: 24, top: 36, bottom: 28 },
+    legend: { data: ['温度', '湿度', '土壤墒情', '光照'], top: 0 },
+    grid: { left: 48, right: 56, top: 36, bottom: 28 },
     xAxis: { type: 'category', data: data.times },
-    yAxis: { type: 'value' },
+    yAxis: [
+      { type: 'value', name: '℃ / %' },
+      { type: 'value', name: 'klx', position: 'right' },
+    ],
     series: [
       { name: '温度', type: 'line', smooth: true, showSymbol: false, data: data.series.temp },
       { name: '湿度', type: 'line', smooth: true, showSymbol: false, data: data.series.humidity },
       { name: '土壤墒情', type: 'line', smooth: true, showSymbol: false, data: data.series.soil_moisture },
+      { name: '光照', type: 'line', smooth: true, showSymbol: false, yAxisIndex: 1, data: data.series.light ?? [] },
     ],
   }
 }

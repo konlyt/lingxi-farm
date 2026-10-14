@@ -1,0 +1,82 @@
+/*
+ * 文件说明：设计 Token（农业绿主题）。
+ * 必须在 element-plus/dist/index.css 之后引入，才能覆盖组件默认样式。
+ * 业务页面请优先使用 --farm-* 变量，避免散落硬编码色值。
+ */
+
+:root {
+  /* ===== 品牌主色：农业绿（替换 Element 默认蓝 #409eff） ===== */
+  --farm-primary-700: #1b4d32;   /* 深森林绿：侧边栏底、登录渐变深端 */
+  --farm-primary-600: #256b43;   /* hover */
+  --farm-primary-500: #2e7d4f;   /* 主按钮、激活态、品牌 */
+  --farm-primary-400: #4a9a6b;
+  --farm-primary-300: #7bb594;
+  --farm-primary-200: #b5d4c2;
+  --farm-primary-100: #e6f2ea;    /* 浅底：选中菜单、Tag 浅底 */
+
+  /* ===== 语义色（贴合农业语境） ===== */
+  --farm-accent: #f59e0b;        /* 采收禁令、AI 标签、天气 */
+  --farm-success: #2e7d4f;       /* 作物健康、在线设备 */
+  --farm-warning: #f59e0b;
+  --farm-danger: #d9534f;         /* 病虫害、离线、高优预警 */
+  --farm-info: #909399;
+
+  /* ===== 背景与表面 ===== */
+  --farm-bg: #f6f8f4;             /* 页面底（偏暖偏绿，替代 #f5f7fa） */
+  --farm-surface: #ffffff;
+  --farm-border: #e5e9e3;
+  --farm-border-light: #eef1ec;
+
+  /* ===== 文字 ===== */
+  --farm-text-primary: #1f2d24;
+  --farm-text-regular: #3d4a42;
+  --farm-text-secondary: #7a8780;
+  --farm-text-placeholder: #a8b3ac;
+
+  /* ===== 圆角 ===== */
+  --farm-radius-sm: 6px;
+  --farm-radius: 10px;
+  --farm-radius-lg: 16px;
+
+  /* ===== 阴影（偏绿色调，替代纯黑阴影） ===== */
+  --farm-shadow-sm: 0 1px 2px rgba(27, 77, 50, 0.05);
+  --farm-shadow-md: 0 4px 16px rgba(27, 77, 50, 0.08);
+  --farm-shadow-lg: 0 12px 32px rgba(27, 77, 50, 0.14);
+
+  /* ===== 大屏深色模式（与浅色同一绿系） ===== */
+  --farm-night-bg: #0c1a14;
+  --farm-night-panel: rgba(10, 26, 20, 0.82);
+  --farm-night-glow: #34d399;
+  --farm-night-border: rgba(52, 211, 153, 0.3);
+
+  /* ===== 覆盖 Element Plus 主色阶 ===== */
+  --el-color-primary: var(--farm-primary-500);
+  --el-color-primary-light-3: #5a9c73;
+  --el-color-primary-light-5: #87b89c;
+  --el-color-primary-light-7: #b5d4c2;
+  --el-color-primary-light-8: #cde3d6;
+  --el-color-primary-light-9: var(--farm-primary-100);
+  --el-color-primary-dark-2: var(--farm-primary-600);
+
+  --el-color-success: var(--farm-success);
+  --el-color-warning: var(--farm-warning);
+  --el-color-danger: var(--farm-danger);
+
+  /* ===== 覆盖 Element 圆角与基础色 ===== */
+  --el-border-radius-base: var(--farm-radius-sm);
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 10px;
+
+  --el-bg-color-page: var(--farm-bg);
+  --el-bg-color: var(--farm-surface);
+  --el-text-color-primary: var(--farm-text-primary);
+  --el-text-color-regular: var(--farm-text-regular);
+  --el-text-color-secondary: var(--farm-text-secondary);
+  --el-text-color-placeholder: var(--farm-text-placeholder);
+  --el-border-color: var(--farm-border);
+  --el-border-color-light: var(--farm-border-light);
+  --el-border-color-lighter: var(--farm-border-light);
+  --el-fill-color-light: #f0f4ee;
+  --el-box-shadow-light: var(--farm-shadow-md);
+  --el-box-shadow: var(--farm-shadow-md);
+}

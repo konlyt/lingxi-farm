@@ -33,6 +33,11 @@ function render(): void {
 onMounted(() => {
   if (!el.value) return
   chart = echarts.init(el.value)
+  // 注入农业绿默认调色板，未显式指定 color 的图表自动统一色调
+  chart.setOption({
+    color: ['#2e7d4f', '#f59e0b', '#d9534f', '#7fb594', '#4a9a6b', '#9fc4b0'],
+    textStyle: { color: '#3d4a42' },
+  })
   render()
   resizeObserver = new ResizeObserver(() => {
     chart?.resize()
