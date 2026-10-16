@@ -1,12 +1,11 @@
 ﻿# =====================================================================
 # 文件名称: start.ps1
-# 文件说明: 农场智能管护系统一键启动脚本。
+# 文件说明: 灵犀田园系统一键启动脚本。
 #           按序启动后端(FastAPI/uvicorn, 端口 8000)与前端(Vite, 端口 5173)，
 #           具备环境检查与幂等启动能力(重复执行不会重复拉起已在运行的服务)。
 # 运行方式: powershell -ExecutionPolicy Bypass -File start.ps1
 # 兼容环境: Windows PowerShell 5.1 及以上
 # =====================================================================
-param()
 
 # 全局错误策略: 任何错误立即终止, 由外层 try/catch 统一输出中文提示
 $ErrorActionPreference = 'Stop'
@@ -172,7 +171,7 @@ try {
     # ================= 主流程 =================
 
     Write-Host '==============================================' -ForegroundColor Magenta
-    Write-Host '      农场智能管护系统 - 一键启动脚本'          -ForegroundColor Magenta
+    Write-Host '      灵犀田园系统 - 一键启动脚本'          -ForegroundColor Magenta
     Write-Host '==============================================' -ForegroundColor Magenta
 
     # 1. 日志目录(不存在则创建)

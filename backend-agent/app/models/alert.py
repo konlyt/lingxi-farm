@@ -5,7 +5,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import Computed, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.mysql import BIGINT, DATE, DATETIME, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,8 +18,11 @@ DT3 = DATETIME(fsp=3)
 class Alert(Base):
     """预警表 ORM 模型（alert）。
 
-    通过 case_key 聚合去重：同地块同病例未解决期间仅一条活跃预警，
-    uk_active_case(case_key, status) 唯一约束在数据库层兜底。
+    通过 case_key 聚合去重：同地块同病例未解决期间仅一条活跃预警。
+    唯一约束 uk_active_case 挂在生成列 active_case_key 上——
+    MySQL 无部分唯一索引，用「仅 active 时非空、其余为 NULL」的生成列实现
+    「只约束活跃预警」；已解决的历史预警不限量（同案例可多次解决，
+    每次再触发都会新建，occurrence 重新计数）。
 
     Attributes:
         id: 预警ID。
@@ -28,6 +31,7 @@ class Alert(Base):
         plot_id: 归属地块ID。
         task_id: 关联诊断任务ID（可空）。
         case_key: 聚合去重键，如 plot:1:pest:早疫病。
+        active_case_key: 生成列，active 时等于 case_key，否则 NULL（唯一约束载体）。
         title: 标题。
         content: 详情 JSON（含最新照片、病情变化、建议）。
         status: 状态 active/resolved。
@@ -37,7 +41,7 @@ class Alert(Base):
     """
     __tablename__ = "alert"
     __table_args__ = (
-        Index("uk_active_case", "case_key", "status", unique=True),
+        Index("uk_active_case", "active_case_key", unique=True),
         Index("idx_plot_type_status", "plot_id", "type", "status"),
         Index("idx_first_triggered", "first_triggered_at"),
         {"comment": "预警表：聚合去重支撑"},
@@ -53,6 +57,11 @@ class Alert(Base):
         BIGINT(unsigned=True), ForeignKey("diagnosis_task.id"), nullable=True, comment="关联诊断任务ID"
     )
     case_key: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="聚合去重键")
+    active_case_key: Mapped[str | None] = mapped_column(
+        String(128),
+        Computed("CASE WHEN `status` = 'active' THEN `case_key` ELSE NULL END"),
+        comment="生成列：active时等于case_key否则NULL，唯一约束仅锁活跃预警",
+    )
     title: Mapped[str] = mapped_column(String(128), nullable=False, comment="标题")
     content: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, comment="详情JSON")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", comment="active/resolved")

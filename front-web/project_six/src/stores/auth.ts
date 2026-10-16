@@ -4,7 +4,12 @@
  */
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { fetchMe, login as loginApi } from '@/api/auth'
+import {
+  fetchMe,
+  loginByCode,
+  loginByPhone,
+  register as registerApi,
+} from '@/api/auth'
 import { TOKEN_KEY } from '@/api/request'
 import type { User } from '@/types/farm'
 
@@ -13,7 +18,6 @@ const USER_KEY = 'farm_user'
 
 /**
  * 读取本地缓存的用户信息。
- * @returns 用户对象；解析失败返回 null
  */
 function readLocalUser(): User | null {
   try {
@@ -36,17 +40,38 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => token.value !== '')
 
   /**
-   * 账号密码登录。
-   * @param username 用户名
-   * @param password 密码
-   * @throws 凭证错误或服务不可用时抛出异常（调用方展示行内错误）
+   * 用登录响应结果填充 store 与本地缓存。
    */
-  async function login(username: string, password: string): Promise<void> {
-    const result = await loginApi(username, password)
+  function applyLoginResult(result: { token: string; user: User }): void {
     token.value = result.token
     user.value = result.user
     localStorage.setItem(TOKEN_KEY, result.token)
     localStorage.setItem(USER_KEY, JSON.stringify(result.user))
+  }
+
+  /**
+   * 手机号+密码登录。
+   * @param phone 手机号
+   * @param password 密码
+   */
+  async function loginWithPhone(phone: string, password: string): Promise<void> {
+    applyLoginResult(await loginByPhone(phone, password))
+  }
+
+  /**
+   * 手机号+验证码登录。
+   * @param phone 手机号
+   * @param code 短信验证码
+   */
+  async function loginWithCode(phone: string, code: string): Promise<void> {
+    applyLoginResult(await loginByCode(phone, code))
+  }
+
+  /**
+   * 手机号注册（成功后自动登录）。
+   */
+  async function register(phone: string, password: string, code: string, nickname?: string): Promise<void> {
+    applyLoginResult(await registerApi(phone, password, code, nickname))
   }
 
   /**
@@ -73,5 +98,15 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem(USER_KEY)
   }
 
-  return { token, user, isOwner, isLoggedIn, login, refreshUser, logout }
+  return {
+    token,
+    user,
+    isOwner,
+    isLoggedIn,
+    loginWithPhone,
+    loginWithCode,
+    register,
+    refreshUser,
+    logout,
+  }
 })

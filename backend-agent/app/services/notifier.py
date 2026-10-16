@@ -75,7 +75,7 @@ def _build_message(to_list: list[str], subject: str, html: str) -> MIMEMultipart
     sender = settings.email_sender or settings.email_user
     msg = MIMEMultipart()
     msg["Subject"] = Header(subject, "utf-8")
-    msg["From"] = formataddr((str(Header("农场智能管护系统", "utf-8")), sender))
+    msg["From"] = formataddr((str(Header("灵犀田园系统", "utf-8")), sender))
     msg["To"] = ", ".join(to_list)
     msg.attach(MIMEText(html, "html", "utf-8"))
     return msg
@@ -148,7 +148,7 @@ def _render_html(title: str, rows: list[tuple[str, str]], footer: str = "") -> s
         f'<h2 style="{_TITLE_STYLE}">{title}</h2>'
         f'{row_html}'
         f'{footer_html}'
-        f'<p style="{_ROW_STYLE}color:#909399;font-size:12px;">—— 农场智能管护系统（自动邮件，请勿回复）</p>'
+        f'<p style="{_ROW_STYLE}color:#909399;font-size:12px;">—— 灵犀田园系统（自动邮件，请勿回复）</p>'
         f'</div>'
     )
 

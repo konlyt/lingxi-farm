@@ -348,7 +348,7 @@ onUnmounted(() => {
         <div class="top-side left">DATA · 60s 自动刷新</div>
         <div class="top-title">
           <span class="title-line" />
-          <h1>农场智能管护 · 监测大屏</h1>
+          <h1>灵犀田园 · 监测大屏</h1>
           <span class="title-line right" />
         </div>
         <div class="top-side right">

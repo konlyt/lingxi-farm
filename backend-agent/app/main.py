@@ -107,7 +107,7 @@ def _warmup_vector_store() -> None:
 
 
 app = FastAPI(
-    title="农场智能管护系统后端",
+    title="灵犀田园系统后端",
     description="单农场自用智能管护系统（蔬菜大棚 + 露天农田）FastAPI 后端",
     version="0.1.0",
     lifespan=lifespan,

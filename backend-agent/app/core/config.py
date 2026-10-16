@@ -92,6 +92,22 @@ class Settings(BaseSettings):
     # ---------- 诊断增强 ----------
     vlm_enhance_enabled: bool = True
 
+    # ---------- 短信验证码（阿里云号码认证 dypns） ----------
+    # sms_dev_mode=true 时不实际发送，固定返回 123456 用于本地调试；
+    # false 时走阿里云 dypns SendSmsVerifyCode / CheckSmsVerifyCode。
+    sms_dev_mode: bool = False
+    sms_access_key_id: str = ""
+    sms_access_key_secret: str = ""
+    sms_sign_name: str = ""
+    sms_template_code: str = ""
+    sms_endpoint: str = "dypnsapi.aliyuncs.com"
+    sms_country_code: str = "86"
+    sms_code_length: int = 6
+    sms_code_expire_seconds: int = 300
+    sms_send_cooldown_seconds: int = 60
+    sms_template_code_key: str = "code"
+    sms_template_minute_key: str = "min"
+
 
 # 全局配置单例
 settings = Settings()

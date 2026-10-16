@@ -1,13 +1,12 @@
 ﻿# =====================================================================
 # 文件名称: stop.ps1
-# 文件说明: 农场智能管护系统一键停止脚本。
+# 文件说明: 灵犀田园系统一键停止脚本。
 #           依据 logs\pids.json 停止后端/前端进程(先优雅, 超时强杀),
 #           并兜底扫描 8000/5173 端口残留进程与项目相关 python/node 进程,
 #           最后校验端口释放情况并清理 PID 记录文件。
 # 运行方式: powershell -ExecutionPolicy Bypass -File stop.ps1
 # 兼容环境: Windows PowerShell 5.1 及以上
 # =====================================================================
-param()
 
 # 全局错误策略: 任何错误立即终止, 由外层 try/catch 统一输出中文提示
 $ErrorActionPreference = 'Stop'
@@ -109,7 +108,7 @@ try {
     # ================= 主流程 =================
 
     Write-Host '==============================================' -ForegroundColor Magenta
-    Write-Host '      农场智能管护系统 - 一键停止脚本'          -ForegroundColor Magenta
+    Write-Host '      灵犀田园系统 - 一键停止脚本'          -ForegroundColor Magenta
     Write-Host '==============================================' -ForegroundColor Magenta
 
     # 1. 读取 PID 记录文件

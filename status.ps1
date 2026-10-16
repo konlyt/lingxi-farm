@@ -1,12 +1,11 @@
 ﻿# =====================================================================
 # 文件名称: status.ps1
-# 文件说明: 农场智能管护系统服务状态查看脚本。
+# 文件说明: 灵犀田园系统服务状态查看脚本。
 #           以表格形式展示 MySQL(3306)可达性、后端(8000)与前端(5173)
 #           的监听状态及对应进程 PID / 进程名。
 # 运行方式: powershell -ExecutionPolicy Bypass -File status.ps1
 # 兼容环境: Windows PowerShell 5.1 及以上
 # =====================================================================
-param()
 
 # 全局错误策略: 任何错误立即终止, 由外层 try/catch 统一输出中文提示
 $ErrorActionPreference = 'Stop'
@@ -70,7 +69,7 @@ try {
     # ================= 主流程 =================
 
     Write-Host '==============================================' -ForegroundColor Magenta
-    Write-Host '      农场智能管护系统 - 服务状态查看'          -ForegroundColor Magenta
+    Write-Host '      灵犀田园系统 - 服务状态查看'          -ForegroundColor Magenta
     Write-Host '==============================================' -ForegroundColor Magenta
     Write-Host ''
 

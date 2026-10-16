@@ -12,6 +12,8 @@ export interface User {
   id: number
   /** 登录名 */
   username: string
+  /** 手机号（手机号登录/注册使用，可选） */
+  phone?: string | null
   /** 昵称 */
   nickname: string
   /** 角色 */

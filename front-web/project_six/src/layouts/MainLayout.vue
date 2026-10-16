@@ -73,7 +73,7 @@ onMounted(() => {
     <el-aside v-if="!isMobile" width="220px" class="app-aside">
       <div class="brand" @click="go('/dashboard')">
         <el-icon :size="22" class="brand-icon"><Sunny /></el-icon>
-        <span>农场智能管护系统</span>
+        <span>灵犀田园系统</span>
       </div>
       <el-menu :default-active="activePath" :default-openeds="openMenus" router class="app-menu">
         <el-menu-item index="/dashboard">
@@ -120,7 +120,7 @@ onMounted(() => {
     <el-container class="app-body">
       <!-- 顶部条：标题 + 用户信息 -->
       <el-header class="app-header" height="52px">
-        <span class="header-title">{{ pageTitle || (isMobile ? '农场智能管护系统' : '') }}</span>
+        <span class="header-title">{{ pageTitle || (isMobile ? '灵犀田园系统' : '') }}</span>
         <el-dropdown trigger="click" @command="handleUserCommand">
           <div class="user-trigger">
             <el-avatar :size="30" class="user-avatar">{{ avatarChar }}</el-avatar>

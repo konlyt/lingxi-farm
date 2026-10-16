@@ -29,6 +29,12 @@ const router = createRouter({
       meta: { title: '登录', public: true },
     },
     {
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/login/RegisterView.vue'),
+      meta: { title: '注册', public: true },
+    },
+    {
       path: '/greenhouse-twin',
       name: 'greenhouse-twin',
       component: () => import('@/views/greenhouse/GreenhouseTwinView.vue'),
@@ -162,9 +168,9 @@ const router = createRouter({
 // 全局前置守卫：登录校验与角色控制
 router.beforeEach((to) => {
   const auth = useAuthStore()
-  // 公开页面：已登录访问登录页时跳转总览
+  // 公开页面：已登录访问登录/注册页时跳转总览
   if (to.meta.public) {
-    if (to.path === '/login' && auth.isLoggedIn) return '/dashboard'
+    if ((to.path === '/login' || to.path === '/register') && auth.isLoggedIn) return '/dashboard'
     return true
   }
   // 未登录跳登录页并记录回跳地址
@@ -182,7 +188,7 @@ router.beforeEach((to) => {
 
 // 全局后置守卫：设置页面标题
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} · 农场智能管护系统` : '农场智能管护系统'
+  document.title = to.meta.title ? `${to.meta.title} · 灵犀田园系统` : '灵犀田园系统'
 })
 
 export default router

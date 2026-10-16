@@ -232,7 +232,7 @@ def send_pending_digest_emails(db: Session) -> int:
             f"<th style='padding:6px 10px;border:1px solid #eee;'>等级</th>"
             f"<th style='padding:6px 10px;border:1px solid #eee;'>触发次数</th>"
             f"</tr>{rows_html}</table>"
-            f"<p style='color:#888;font-size:12px;'>请前往系统「预警中心」处理——农场智能管护系统（自动邮件，请勿回复）</p>"
+            f"<p style='color:#888;font-size:12px;'>请前往系统「预警中心」处理——灵犀田园系统（自动邮件，请勿回复）</p>"
             f"</div>"
         )
         sent, err = notifier.send_email(user.email, f"【每日汇总】今日 {len(records)} 条预警更新", html)
@@ -270,7 +270,7 @@ def create_or_merge_alert(db: Session, plot_id: int, alert_type: str, case_key: 
         Alert: 新建或合并后的预警 ORM 实例。
 
     Raises:
-        Exception: 数据库写入冲突（uk_active_case 唯一约束并发）时抛出，由调用方重试或忽略。
+        Exception: 数据库写入冲突（uk_active_case 唯一约束：同 case_key 并发新建活跃预警）时抛出，由调用方重试或忽略。
     """
     active = (
         db.query(Alert)

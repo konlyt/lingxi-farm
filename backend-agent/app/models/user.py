@@ -32,6 +32,7 @@ class SysUser(Base):
     __tablename__ = "sys_user"
     __table_args__ = (
         Index("uk_username", "username", unique=True),
+        Index("uk_phone", "phone", unique=True),
         Index("uk_wx_openid", "wx_openid", unique=True),
         Index("uk_email", "email", unique=True),
         {"comment": "用户表：农场主与家庭成员"},
@@ -39,6 +40,7 @@ class SysUser(Base):
 
     id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True, autoincrement=True, comment="用户ID")
     username: Mapped[str] = mapped_column(String(64), nullable=False, comment="登录名")
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="手机号（唯一，手机号登录/注册使用）")
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False, comment="bcrypt密码哈希")
     nickname: Mapped[str] = mapped_column(String(64), nullable=False, comment="显示名")
     role: Mapped[str] = mapped_column(String(16), nullable=False, comment="角色 owner/member")

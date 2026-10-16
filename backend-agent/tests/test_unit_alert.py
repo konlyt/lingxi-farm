@@ -3,7 +3,8 @@
 直接调用 app.services.alert_service 服务层函数，直连真实 MySQL 验证：
 1. create_or_merge_alert 新建 active 预警（含 updates 时间线与即时推送记录）；
 2. 同 case_key 再触发合并：occurrence_count+1 且不新建预警；
-3. 级别升级路径：传入更高级别立即升级、occurrence 达阈值自动升级（均补即时推送）；
+3. 级别升级路径：传入更高级别立即升级、occurrence 达阈值自动升级（均补即时推送，
+   受 v2.5「60 分钟即时邮件节流」约束）；
 4. resolve 后同 case_key 再触发新建新预警（聚合窗口关闭）；
 5. create_daily_digest_push 每日汇总推送唯一（uk_digest 兜底）。
 
@@ -11,7 +12,7 @@
 不触碰库中演示数据。
 """
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy.orm import Session
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.models.alert import Alert, AlertPushRecord
 from app.models.user import SysUser
 from app.services.alert_service import _next_level, create_daily_digest_push, create_or_merge_alert
+from app.utils.time_utils import now
 
 
 def _unique_case_key() -> str:
@@ -120,6 +122,13 @@ class TestCreateOrMergeAlert:
             title="pytest升级", content={"disease_name": "pytest灰霉病"}, level="info",
         )
         assert alert.level == "info"
+        # v2.5 刷屏治理：即时邮件 60 分钟节流。先把首轮推送记录的发送时间老化 2 小时
+        # 豁免节流，才能验证「升级补推」行为（节流本身由 test_instant_push_throttled 覆盖）
+        db.query(AlertPushRecord).filter(
+            AlertPushRecord.alert_id == alert.id,
+            AlertPushRecord.push_type == "instant",
+        ).update({"sent_at": now() - timedelta(hours=2)}, synchronize_session=False)
+        db.commit()
         merged = create_or_merge_alert(
             db, plot_id=test_plot.id, alert_type="pest", case_key=case_key,
             title="pytest升级", content={"disease_name": "pytest灰霉病"}, level="critical",
@@ -132,6 +141,38 @@ class TestCreateOrMergeAlert:
             .count()
         )
         assert push_count == 2 * user_count
+
+    def test_instant_push_throttled_within_60min(self, db: Session, test_plot) -> None:
+        """v2.5 刷屏治理：60 分钟内同预警的第二次即时推送被节流（不落新记录）。"""
+        case_key = _unique_case_key()
+        user_count = _enabled_user_count(db)
+        alert = create_or_merge_alert(
+            db, plot_id=test_plot.id, alert_type="pest", case_key=case_key,
+            title="pytest节流", content={"disease_name": "pytest灰霉病"}, level="info",
+        )
+        # 紧接着升级（不老化 sent_at）：第二轮即时推送应被 60 分钟节流跳过
+        merged = create_or_merge_alert(
+            db, plot_id=test_plot.id, alert_type="pest", case_key=case_key,
+            title="pytest节流", content={"disease_name": "pytest灰霉病"}, level="critical",
+        )
+        assert merged.level == "critical"
+        push_count = (
+            db.query(AlertPushRecord)
+            .filter(AlertPushRecord.alert_id == alert.id, AlertPushRecord.push_type == "instant")
+            .count()
+        )
+        sent_exists = (
+            db.query(AlertPushRecord.id)
+            .filter(
+                AlertPushRecord.alert_id == alert.id,
+                AlertPushRecord.push_type == "instant",
+                AlertPushRecord.status == "sent",
+            )
+            .first()
+        )
+        if sent_exists is None:
+            pytest.skip("邮件通道未配置时即时推送全部 failed，不触发 60 分钟节流，跳过")
+        assert push_count == user_count  # 仅首轮落库，第二轮被节流
 
     def test_level_upgrade_by_occurrence_threshold(self, db: Session, test_plot) -> None:
         """occurrence 累计达阈值自动升级：5 次触发后升级为 critical。"""
@@ -166,6 +207,36 @@ class TestCreateOrMergeAlert:
         assert second.occurrence_count == 1
         rows = db.query(Alert).filter(Alert.case_key == case_key).all()
         assert len(rows) == 2
+
+    def test_resolve_twice_same_case_ok(self, db: Session, test_plot) -> None:
+        """同案例「解决→再触发→再解决」不应触发唯一键冲突。
+
+        回归：uk_active_case 曾定义为 (case_key, status)，把已解决历史也锁死，
+        同案例第二次确认解决时 MySQL 报 1062 Duplicate entry，前端 500。
+        """
+        case_key = _unique_case_key()
+        first = create_or_merge_alert(
+            db, plot_id=test_plot.id, alert_type="pest", case_key=case_key,
+            title="pytest二解1", content={"disease_name": "pytest灰霉病"}, level="warning",
+        )
+        first.status = "resolved"
+        db.commit()
+        second = create_or_merge_alert(
+            db, plot_id=test_plot.id, alert_type="pest", case_key=case_key,
+            title="pytest二解2", content={"disease_name": "pytest灰霉病"}, level="warning",
+        )
+        assert second.status == "active"
+        # 关键回归点：同 case_key 第二条预警再次解决，不得抛 IntegrityError(1062)
+        second.status = "resolved"
+        db.commit()
+        db.refresh(second)
+        assert second.status == "resolved"
+        resolved_rows = (
+            db.query(Alert)
+            .filter(Alert.case_key == case_key, Alert.status == "resolved")
+            .all()
+        )
+        assert len(resolved_rows) == 2
 
     def test_daily_digest_unique_per_day(self, db: Session, test_plot) -> None:
         """每日汇总推送 uk_digest 兜底：同日第二次写入返回 False 且不落库。"""

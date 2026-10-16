@@ -23,3 +23,8 @@ logs/
 .vscode/
 .idea/
 .DS_Store
+
+# 打包/导出产物
+slidep.tgz
+*.tgz
+pptx_defense/dist/

@@ -118,6 +118,20 @@ def apply_email_fields_migration() -> None:
         print(f"[2.5/6] [WARN] sys_user 邮箱字段迁移失败：{exc}")
 
 
+def apply_phone_field_migration() -> None:
+    """对 sys_user 执行手机号字段幂等迁移（phone + uk_phone 唯一索引）。
+
+    Raises:
+        Exception: ALTER 失败时打印警告并降级，不中断初始化。
+    """
+    from scripts.migrate_phone_field import migrate as migrate_phone_field
+
+    try:
+        migrate_phone_field()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[2.6/6] [WARN] sys_user 手机号字段迁移失败：{exc}")
+
+
 def apply_sensor_partition() -> None:
     """对 sensor_reading 执行按月分区（RANGE TO_DAYS(reported_at)）。
 
@@ -162,6 +176,10 @@ def apply_sensor_partition() -> None:
 def seed_users(session: Session) -> None:
     """写入种子用户：农场主 owner/123456 与家庭成员 member/123456。
 
+    两个账号同时绑定演示手机号，便于走通手机号+密码/验证码登录：
+    - owner：18890259380（农场主）
+    - member：18229535237（家人小王）
+
     Args:
         session: 数据库会话。
     """
@@ -172,6 +190,7 @@ def seed_users(session: Session) -> None:
         [
             SysUser(
                 username="owner",
+                phone="18890259380",
                 password_hash=hash_password("123456"),
                 nickname="农场主",
                 role="owner",
@@ -180,6 +199,7 @@ def seed_users(session: Session) -> None:
             ),
             SysUser(
                 username="member",
+                phone="18229535237",
                 password_hash=hash_password("123456"),
                 nickname="家人小王",
                 role="member",
@@ -189,7 +209,10 @@ def seed_users(session: Session) -> None:
         ]
     )
     session.commit()
-    print("[4/6] 种子用户写入：owner/123456（农场主）、member/123456（家人小王）")
+    print(
+        "[4/6] 种子用户写入：owner/18890259380/123456（农场主）、"
+        "member/18229535237/123456（家人小王）"
+    )
 
 
 def seed_confidence_thresholds(session: Session) -> None:
@@ -582,17 +605,18 @@ def main() -> None:
     Raises:
         Exception: 任一数据库操作失败时抛出并以非零码退出。
     """
-    parser = argparse.ArgumentParser(description="农场智能管护系统数据库初始化脚本")
+    parser = argparse.ArgumentParser(description="灵犀田园系统数据库初始化脚本")
     parser.add_argument("--reset", action="store_true", help="删除并重建数据库（危险操作）")
     args = parser.parse_args()
 
     if args.reset:
         reset_database()
 
-    print("========== 农场智能管护系统 数据库初始化开始 ==========")
+    print("========== 灵犀田园系统 数据库初始化开始 ==========")
     create_database()
     create_tables()
     apply_email_fields_migration()
+    apply_phone_field_migration()
     apply_sensor_partition()
 
     session = SessionLocal()
