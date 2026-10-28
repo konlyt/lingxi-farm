@@ -1,0 +1,28 @@
+# Milvus standalone 单容器部署（内嵌 etcd + 本地存储，无外部依赖）。
+# 用途：本机没有可用 Milvus 实例时一键起服务。
+# 注意：默认占用宿主机 19530 端口；若该端口已被其他 Milvus 实例占用，
+#       可将端口映射改为 "19531:19530" 并同步把 .env 的 MILVUS_PORT 改为 19531。
+#
+# 启动：docker compose -f docker-compose.milvus.yml up -d
+# 停止：docker compose -f docker-compose.milvus.yml down
+services:
+  lingxi-milvus:
+    image: milvusdb/milvus:v2.4.15
+    container_name: lingxi-milvus
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      ETCD_CONFIG_PATH: /milvus/configs/embedEtcd.yaml
+      COMMON_STORAGETYPE: local
+    volumes:
+      - lingxi_milvus_data:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    restart: unless-stopped
+
+volumes:
+  lingxi_milvus_data:

@@ -3,7 +3,6 @@
 负责应用实例创建、CORS 配置、统一响应异常处理、
 静态文件（上传图像）挂载、启动时自动建表与路由注册。
 """
-import json
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -64,10 +63,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def _warmup_vector_store() -> None:
-    """向量索引预热：确保 vectors.json 就绪并同步知识文档元数据状态。
+    """向量索引预热：确保检索后端索引就绪并同步知识文档元数据状态。
 
-    vectors.json 不存在时对全部知识文档切片向量化建立索引；
-    随后按向量库实际切片数回写 knowledge_document 的 chunk_count/embed_status。
+    按 RETRIEVAL_BACKEND 分发（local=vectors.json / milvus=Milvus collection）：
+    索引缺失时对全部知识文档切片向量化建立索引；随后按后端实际切片数
+    回写 knowledge_document 的 chunk_count/embed_status。
 
     Returns:
         None。
@@ -81,23 +81,19 @@ def _warmup_vector_store() -> None:
 
     session = SessionLocal()
     try:
-        if not vector_store.VECTOR_FILE.exists():
-            docs = session.query(KnowledgeDocument).all()
-            documents = []
-            for doc in docs:
-                relative = (doc.file_url or "").removeprefix("/uploads/")
-                file_path = UPLOAD_DIR / relative
-                content = file_path.read_text(encoding="utf-8") if file_path.exists() else ""
-                if content:
-                    documents.append({"id": doc.id, "title": doc.title, "category": doc.category, "content": content})
-            chunk_count = vector_store.ensure_index_built(documents)
-            logger.info("向量索引预热完成: %s 篇文档 / %s 个切片", len(documents), chunk_count)
+        docs = session.query(KnowledgeDocument).all()
+        documents = []
+        for doc in docs:
+            relative = (doc.file_url or "").removeprefix("/uploads/")
+            file_path = UPLOAD_DIR / relative
+            content = file_path.read_text(encoding="utf-8") if file_path.exists() else ""
+            if content:
+                documents.append({"id": doc.id, "title": doc.title, "category": doc.category, "content": content})
+        chunk_count = vector_store.ensure_index_built(documents)
+        if chunk_count:
+            logger.info("向量索引预热完成(%s): %s 篇文档 / %s 个切片", vector_store.backend_name(), len(documents), chunk_count)
         # 按向量库实际切片数同步文档元数据（done/pending）
-        with open(vector_store.VECTOR_FILE, encoding="utf-8") as f:
-            chunks = json.load(f).get("chunks", [])
-        count_by_doc: dict[int, int] = {}
-        for chunk in chunks:
-            count_by_doc[chunk["doc_id"]] = count_by_doc.get(chunk["doc_id"], 0) + 1
+        count_by_doc = vector_store.get_chunk_counts()
         for doc in session.query(KnowledgeDocument).all():
             doc.chunk_count = count_by_doc.get(doc.id, 0)
             doc.embed_status = "done" if doc.chunk_count > 0 else "failed"

@@ -33,6 +33,11 @@ class Settings(BaseSettings):
         zhipu_base_url: 智谱开放平台接口地址。
         zhipu_api_key: 智谱 API Key。
         zhipu_model: 智谱向量化模型名（RAG 用）。
+        retrieval_backend: 向量检索后端（local=本地 vectors.json / milvus=Milvus）。
+        milvus_host: Milvus 服务主机。
+        milvus_port: Milvus gRPC 端口（默认 19530）。
+        milvus_collection: 知识切片 collection 名。
+        milvus_dim: 向量维度（需与 Embedding 模型输出一致，Embedding-3 为 2048）。
         email_host: SMTP 邮件服务器主机（如 smtp.qq.com）。
         email_port: SMTP SSL 端口（默认 465）。
         email_user: SMTP 登录邮箱账号（留空表示邮件通道未配置）。
@@ -74,6 +79,15 @@ class Settings(BaseSettings):
     zhipu_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     zhipu_api_key: str = ""
     zhipu_model: str = "Embedding-3"
+
+    # ---------- 向量检索后端（RAG） ----------
+    # local: 本地 vectors.json + numpy 余弦（零依赖兜底）；milvus: Milvus 向量数据库。
+    # backend=milvus 但服务不可达时自动降级 local 并告警，保证演示环境可用。
+    retrieval_backend: str = "local"
+    milvus_host: str = "127.0.0.1"
+    milvus_port: int = 19530
+    milvus_collection: str = "lingxi_knowledge_docs"
+    milvus_dim: int = 2048
 
     # ---------- 和风天气（QWeather） ----------
     weather_api_host: str = "https://devapi.qweather.com"
