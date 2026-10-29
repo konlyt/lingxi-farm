@@ -28,6 +28,9 @@ logs/
 .workbuddy/
 .trae/
 
+# 项目开发文档（不上传）
+项目开发文档/
+
 # 打包/导出产物
 slidep.tgz
 *.tgz
